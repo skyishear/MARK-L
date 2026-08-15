@@ -1,0 +1,23 @@
+# Secrets
+config/api_keys.json
+config/security.json
+*.key
+*.crt
+.env
+
+# Databases
+*.db
+
+# Runtime
+missions/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
