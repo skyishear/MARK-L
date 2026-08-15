@@ -1,23 +1,60 @@
-# Secrets
+# ===== MARK L Secrets =====
 config/api_keys.json
 config/security.json
 *.key
 *.crt
 .env
 
-# Databases
-*.db
-
-# Runtime
+# ===== Runtime =====
 missions/
 logs/
+*.db
 
-# Python
+# ===== Python =====
 __pycache__/
-*.pyc
+*.py[codz]
+*$py.class
+*.so
 .venv/
 venv/
+env/
+ENV/
 
-# OS
+# ===== Build =====
+build/
+dist/
+downloads/
+.eggs/
+*.egg-info/
+*.egg
+MANIFEST
+
+# ===== Testing =====
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache
+.hypothesis/
+
+# ===== IDE =====
+.vscode/
+.idea/
+
+# ===== OS =====
 .DS_Store
 Thumbs.db
+
+# ===== Jupyter =====
+.ipynb_checkpoints
+
+# ===== Type Checkers =====
+.mypy_cache/
+.pytype/
+.pyre/
+.ruff_cache/
+
+# ===== Streamlit =====
+.streamlit/secrets.toml
