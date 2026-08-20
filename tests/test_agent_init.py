@@ -10,6 +10,8 @@ from core.agent.learning_manager import LearningManager
 from core.agent.memory_index_manager import MemoryIndexManager
 from core.agent.reasoning_manager import ReasoningManager
 from core.agent.reflection_manager import ReflectionManager
+from core.execution_orchestrator import ExecutionOrchestrator, OrchestratedTask, TaskState
+from core.execution_pipeline import ExecutionPipeline
 from core.planner import ExecutionPlan, PlanningEngine
 
 
@@ -24,6 +26,8 @@ class TestDefaultConstruction:
         assert isinstance(agent.reflection, ReflectionManager)
         assert isinstance(agent.reasoning, ReasoningManager)
         assert isinstance(agent.planning, PlanningEngine)
+        assert isinstance(agent.execution_orchestrator, ExecutionOrchestrator)
+        assert isinstance(agent.execution_pipeline, ExecutionPipeline)
 
     def test_default_modules_start_empty(self) -> None:
         agent = Agent()
@@ -34,6 +38,11 @@ class TestDefaultConstruction:
         assert len(agent.memory_index) == 0
         assert len(agent.reflection) == 0
         assert len(agent.reasoning) == 0
+
+    def test_default_execution_orchestrator_has_no_tasks(self) -> None:
+        agent = Agent()
+        assert agent.execution_orchestrator.order == ()
+        assert agent.execution_pipeline.ready_task_ids() == ()
 
     def test_two_default_agents_have_independent_modules(self) -> None:
         agent1 = Agent()
@@ -87,6 +96,21 @@ class TestInjectedConstruction:
         agent = Agent(planning=planning)
         assert agent.planning is planning
 
+    def test_injected_execution_orchestrator_is_used(self) -> None:
+        orchestrator = ExecutionOrchestrator(
+            [OrchestratedTask(task_id="t1", depends_on=())]
+        )
+        agent = Agent(execution_orchestrator=orchestrator)
+        assert agent.execution_orchestrator is orchestrator
+        assert agent.execution_orchestrator.order == ("t1",)
+
+    def test_injected_execution_pipeline_is_used(self) -> None:
+        orchestrator = ExecutionOrchestrator([])
+        plan = PlanningEngine().plan("write the report")
+        pipeline = ExecutionPipeline(orchestrator, plan)
+        agent = Agent(execution_pipeline=pipeline)
+        assert agent.execution_pipeline is pipeline
+
     def test_partial_injection_defaults_the_rest(self) -> None:
         history = HistoryManager()
         agent = Agent(history=history)
@@ -106,6 +130,25 @@ class TestProperties:
         assert agent.reflection is agent.reflection
         assert agent.reasoning is agent.reasoning
         assert agent.planning is agent.planning
+        assert agent.execution_orchestrator is agent.execution_orchestrator
+        assert agent.execution_pipeline is agent.execution_pipeline
+
+    def test_execution_orchestrator_and_pipeline_share_the_same_orchestrator(self) -> None:
+        agent = Agent()
+        assert agent.execution_pipeline.ready_task_ids() == agent.execution_orchestrator.order
+
+    def test_no_task_is_executed_and_no_orchestrator_state_changes(self) -> None:
+        agent = Agent(
+            execution_orchestrator=ExecutionOrchestrator(
+                [OrchestratedTask(task_id="t1", depends_on=())]
+            )
+        )
+        before = agent.execution_orchestrator.snapshot()
+        agent.execution_pipeline
+        agent.execution_orchestrator
+        after = agent.execution_orchestrator.snapshot()
+        assert before == after
+        assert agent.execution_orchestrator.get_state("t1") == TaskState.PENDING
 
     def test_planning_produces_a_plan_without_touching_other_modules(self) -> None:
         agent = Agent()
@@ -175,6 +218,12 @@ class TestSnapshot:
         snap = agent.snapshot()
         assert "planning" not in snap
 
+    def test_snapshot_omits_execution_orchestrator_and_pipeline(self) -> None:
+        agent = Agent()
+        snap = agent.snapshot()
+        assert "execution_orchestrator" not in snap
+        assert "execution_pipeline" not in snap
+
     def test_snapshot_context_is_a_copy(self) -> None:
         agent = Agent()
         agent.context.set("k", "v")
@@ -229,7 +278,10 @@ class TestNoForbiddenIntegration:
             "core.agent.memory_index_manager",
             "core.agent.reasoning_manager",
             "core.agent.reflection_manager",
+            "core.execution_orchestrator",
+            "core.execution_pipeline",
             "core.planner",
+            "datetime",
             "typing",
             "__future__",
         }

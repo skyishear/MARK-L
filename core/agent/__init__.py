@@ -10,6 +10,7 @@ reasoning, planning, tool execution, or persistence of its own.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from core.agent.context_manager import ContextManager
@@ -19,11 +20,15 @@ from core.agent.learning_manager import LearningManager
 from core.agent.memory_index_manager import MemoryIndexManager
 from core.agent.reasoning_manager import ReasoningManager
 from core.agent.reflection_manager import ReflectionManager
-from core.planner import PlanningEngine
+from core.execution_orchestrator import ExecutionOrchestrator
+from core.execution_pipeline import ExecutionPipeline
+from core.planner import ExecutionPlan, Goal, PlanningEngine
 
 __all__ = [
     "Agent",
     "ContextManager",
+    "ExecutionOrchestrator",
+    "ExecutionPipeline",
     "HistoryManager",
     "KnowledgeManager",
     "LearningManager",
@@ -32,6 +37,24 @@ __all__ = [
     "ReasoningManager",
     "ReflectionManager",
 ]
+
+
+def _default_execution_plan() -> ExecutionPlan:
+    """A fixed, empty (zero-task) placeholder ExecutionPlan.
+
+    Backs Agent's default ``execution_pipeline`` only, so
+    ``ExecutionPipeline`` (which requires a plan) is still
+    default-constructible with no caller input, matching every other
+    Foundation module's zero-arg default. Built directly from
+    ``core.planner``'s existing data types rather than via
+    ``PlanningEngine.plan()`` (which requires a real, non-empty goal
+    string) — no planning, execution, or side effect occurs. Its
+    empty task set is never exercised unless a caller supplies real
+    tasks via an injected ``ExecutionOrchestrator``/``ExecutionPipeline``.
+    """
+    now = datetime.now(timezone.utc)
+    goal = Goal(id="agent-default-goal", description="agent-default", created_at=now)
+    return ExecutionPlan(id="agent-default-plan", goal=goal, tasks=(), created_at=now)
 
 
 class Agent:
@@ -54,6 +77,17 @@ class Agent:
     is a pure function of a goal string with no stored state, no
     execution, no memory access, and no AI calls — so it holds no
     data for ``snapshot()`` or ``clear_all()`` to report or clear.
+
+    ``execution_orchestrator`` (``core.execution_orchestrator.
+    ExecutionOrchestrator``) and ``execution_pipeline``
+    (``core.execution_pipeline.ExecutionPipeline``, v3.5 Execution
+    Runtime) are composed unchanged. Neither is exercised
+    automatically: no task is executed, no ``ProblemSolver``/AI/
+    Memory/Skill call is made, and no orchestrator state changes on
+    construction. ``ExecutionSession``, ``ExecutionProgress``,
+    ``ExecutionResult``, and ``ExecutionEvent`` remain runtime objects
+    created later by higher-level flows — Agent does not compose or
+    expose them.
     """
 
     def __init__(
@@ -66,6 +100,8 @@ class Agent:
         reflection: ReflectionManager | None = None,
         reasoning: ReasoningManager | None = None,
         planning: PlanningEngine | None = None,
+        execution_orchestrator: ExecutionOrchestrator | None = None,
+        execution_pipeline: ExecutionPipeline | None = None,
     ) -> None:
         """Compose the Agent from Foundation module instances.
 
@@ -84,6 +120,16 @@ class Agent:
         self._reflection = reflection if reflection is not None else ReflectionManager()
         self._reasoning = reasoning if reasoning is not None else ReasoningManager()
         self._planning = planning if planning is not None else PlanningEngine()
+        self._execution_orchestrator = (
+            execution_orchestrator
+            if execution_orchestrator is not None
+            else ExecutionOrchestrator([])
+        )
+        self._execution_pipeline = (
+            execution_pipeline
+            if execution_pipeline is not None
+            else ExecutionPipeline(self._execution_orchestrator, _default_execution_plan())
+        )
 
     @property
     def history(self) -> HistoryManager:
@@ -125,6 +171,16 @@ class Agent:
         """The composed PlanningEngine instance (stateless; core.planner, unchanged)."""
         return self._planning
 
+    @property
+    def execution_orchestrator(self) -> ExecutionOrchestrator:
+        """The composed ExecutionOrchestrator instance (v3.5 runtime, unchanged)."""
+        return self._execution_orchestrator
+
+    @property
+    def execution_pipeline(self) -> ExecutionPipeline:
+        """The composed ExecutionPipeline instance (v3.5 runtime, unchanged)."""
+        return self._execution_pipeline
+
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.
 
@@ -132,11 +188,10 @@ class Agent:
         ``history`` uses the canonical HistoryManager's own
         ``get_history()`` (not ``get_all()``). ``memory_index``
         contributes only its indexed-item count, since it stores no
-        content to list. ``planning`` is omitted: PlanningEngine is
-        stateless and its only public API, ``plan(goal)``, requires a
-        goal argument and creates a new plan rather than reading
-        existing state, so there is nothing for a read-only snapshot
-        to report.
+        content to list. ``planning``, ``execution_orchestrator``, and
+        ``execution_pipeline`` are omitted: none has a compatible
+        zero-argument read method that reports meaningful aggregate
+        state the way the other modules' does.
         """
         return {
             "history": self._history.get_history(),
@@ -153,7 +208,11 @@ class Agent:
 
         Delegates to each module's existing ``clear`` method; performs
         no logic of its own. ``planning`` has no ``clear()`` — it is
-        stateless and holds nothing to clear.
+        stateless and holds nothing to clear. ``execution_orchestrator``
+        and ``execution_pipeline`` are likewise excluded: neither has a
+        clear-equivalent public method, and clearing orchestrator state
+        here would mean modifying runtime state, which this integration
+        does not do.
         """
         self._history.clear()
         self._context.clear()
