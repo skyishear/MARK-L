@@ -10,6 +10,7 @@ from core.agent.learning_manager import LearningManager
 from core.agent.memory_index_manager import MemoryIndexManager
 from core.agent.reasoning_manager import ReasoningManager
 from core.agent.reflection_manager import ReflectionManager
+from core.planner import ExecutionPlan, PlanningEngine
 
 
 class TestDefaultConstruction:
@@ -22,6 +23,7 @@ class TestDefaultConstruction:
         assert isinstance(agent.memory_index, MemoryIndexManager)
         assert isinstance(agent.reflection, ReflectionManager)
         assert isinstance(agent.reasoning, ReasoningManager)
+        assert isinstance(agent.planning, PlanningEngine)
 
     def test_default_modules_start_empty(self) -> None:
         agent = Agent()
@@ -80,6 +82,11 @@ class TestInjectedConstruction:
         agent = Agent(reasoning=reasoning)
         assert agent.reasoning is reasoning
 
+    def test_injected_planning_is_used(self) -> None:
+        planning = PlanningEngine()
+        agent = Agent(planning=planning)
+        assert agent.planning is planning
+
     def test_partial_injection_defaults_the_rest(self) -> None:
         history = HistoryManager()
         agent = Agent(history=history)
@@ -98,6 +105,14 @@ class TestProperties:
         assert agent.memory_index is agent.memory_index
         assert agent.reflection is agent.reflection
         assert agent.reasoning is agent.reasoning
+        assert agent.planning is agent.planning
+
+    def test_planning_produces_a_plan_without_touching_other_modules(self) -> None:
+        agent = Agent()
+        result = agent.planning.plan("write the report")
+        assert isinstance(result, ExecutionPlan)
+        assert agent.history.get_history() == []
+        assert len(agent.context) == 0
 
 
 class TestSnapshot:
@@ -155,6 +170,11 @@ class TestSnapshot:
         snap = agent.snapshot()
         assert len(snap["reasoning"]) == 1
 
+    def test_snapshot_omits_planning(self) -> None:
+        agent = Agent()
+        snap = agent.snapshot()
+        assert "planning" not in snap
+
     def test_snapshot_context_is_a_copy(self) -> None:
         agent = Agent()
         agent.context.set("k", "v")
@@ -209,6 +229,7 @@ class TestNoForbiddenIntegration:
             "core.agent.memory_index_manager",
             "core.agent.reasoning_manager",
             "core.agent.reflection_manager",
+            "core.planner",
             "typing",
             "__future__",
         }

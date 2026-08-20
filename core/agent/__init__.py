@@ -19,6 +19,7 @@ from core.agent.learning_manager import LearningManager
 from core.agent.memory_index_manager import MemoryIndexManager
 from core.agent.reasoning_manager import ReasoningManager
 from core.agent.reflection_manager import ReflectionManager
+from core.planner import PlanningEngine
 
 __all__ = [
     "Agent",
@@ -27,6 +28,7 @@ __all__ = [
     "KnowledgeManager",
     "LearningManager",
     "MemoryIndexManager",
+    "PlanningEngine",
     "ReasoningManager",
     "ReflectionManager",
 ]
@@ -46,6 +48,12 @@ class Agent:
     unchanged (``record`` / ``get_history`` / ``latest`` / ``summary``
     / ``clear``), not the ``add_event`` / ``get_all`` style API used
     by the other Foundation modules in this package.
+
+    ``planning`` is ``core.planner.PlanningEngine`` (v3.1.0 Planning
+    Engine, Phase 1), composed unchanged. It is stateless — ``plan()``
+    is a pure function of a goal string with no stored state, no
+    execution, no memory access, and no AI calls — so it holds no
+    data for ``snapshot()`` or ``clear_all()`` to report or clear.
     """
 
     def __init__(
@@ -57,6 +65,7 @@ class Agent:
         memory_index: MemoryIndexManager | None = None,
         reflection: ReflectionManager | None = None,
         reasoning: ReasoningManager | None = None,
+        planning: PlanningEngine | None = None,
     ) -> None:
         """Compose the Agent from Foundation module instances.
 
@@ -74,6 +83,7 @@ class Agent:
         )
         self._reflection = reflection if reflection is not None else ReflectionManager()
         self._reasoning = reasoning if reasoning is not None else ReasoningManager()
+        self._planning = planning if planning is not None else PlanningEngine()
 
     @property
     def history(self) -> HistoryManager:
@@ -110,6 +120,11 @@ class Agent:
         """The composed ReasoningManager instance."""
         return self._reasoning
 
+    @property
+    def planning(self) -> PlanningEngine:
+        """The composed PlanningEngine instance (stateless; core.planner, unchanged)."""
+        return self._planning
+
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.
 
@@ -117,7 +132,11 @@ class Agent:
         ``history`` uses the canonical HistoryManager's own
         ``get_history()`` (not ``get_all()``). ``memory_index``
         contributes only its indexed-item count, since it stores no
-        content to list.
+        content to list. ``planning`` is omitted: PlanningEngine is
+        stateless and its only public API, ``plan(goal)``, requires a
+        goal argument and creates a new plan rather than reading
+        existing state, so there is nothing for a read-only snapshot
+        to report.
         """
         return {
             "history": self._history.get_history(),
@@ -133,7 +152,8 @@ class Agent:
         """Clear every composed Foundation module.
 
         Delegates to each module's existing ``clear`` method; performs
-        no logic of its own.
+        no logic of its own. ``planning`` has no ``clear()`` — it is
+        stateless and holds nothing to clear.
         """
         self._history.clear()
         self._context.clear()
