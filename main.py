@@ -53,6 +53,7 @@ from core.problem_solver import (
     execute_and_verify, verify_path_exists,
 )
 from core.identity_engine import IdentitySession, has_voice_profile, has_pin
+from core.agent import Agent
 
 from actions.file_processor import file_processor
 from actions.flight_finder     import flight_finder
@@ -669,7 +670,7 @@ TOOL_DECLARATIONS = [
 
 class JarvisLive:
 
-    def __init__(self, ui: JarvisUI):
+    def __init__(self, ui: JarvisUI, agent: Agent | None = None):
         self.ui             = ui
         self._asst_name     = "JARVIS"   # updated each session from config
         self.session              = None
@@ -680,6 +681,7 @@ class JarvisLive:
         self._speaking_lock       = threading.Lock()
         self._phone_active        = False   # True while phone mic is streaming; pauses PC mic
         self._identity             = IdentitySession()  # owner/guest speaker-mode tracker
+        self._agent                = agent if agent is not None else Agent()  # Foundation modules composition root
         self._turn_audio_buf       = bytearray()          # raw mic bytes for the in-progress user turn
         self._turn_audio_lock      = threading.Lock()
         self._pending_vision       = None    # (img_bytes, mime_type, question, angle) to inject after tool response
