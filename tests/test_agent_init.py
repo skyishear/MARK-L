@@ -12,6 +12,7 @@ from core.agent.reasoning_manager import ReasoningManager
 from core.agent.reflection_manager import ReflectionManager
 from core.execution_orchestrator import ExecutionOrchestrator, OrchestratedTask, TaskState
 from core.execution_pipeline import ExecutionPipeline
+from core.execution_session import ExecutionSession
 from core.planner import ExecutionPlan, PlanningEngine
 
 
@@ -259,6 +260,60 @@ class TestClearAll:
         assert agent.history.get_history() == []
 
 
+class TestCreateExecutionSession:
+    def test_builds_session_with_plan_orchestrator_pipeline_metadata(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("step one then step two")
+        session = agent.create_execution_session(plan, metadata={"source": "test"})
+        assert isinstance(session, ExecutionSession)
+        assert session.plan is plan
+        assert isinstance(session.orchestrator, ExecutionOrchestrator)
+        assert isinstance(session.pipeline, ExecutionPipeline)
+        assert dict(session.metadata) == {"source": "test"}
+
+    def test_built_orchestrator_matches_plan_tasks(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("step one then step two")
+        session = agent.create_execution_session(plan)
+        assert session.orchestrator.order == tuple(t.id for t in plan.execution_order())
+        assert session.pipeline.ready_task_ids() == (plan.tasks[0].id,)
+
+    def test_injected_orchestrator_and_pipeline_are_reused(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("fix the wifi")
+        orchestrator = ExecutionOrchestrator(
+            [OrchestratedTask(task_id=plan.tasks[0].id, depends_on=())]
+        )
+        pipeline = ExecutionPipeline(orchestrator, plan)
+        session = agent.create_execution_session(plan, orchestrator=orchestrator, pipeline=pipeline)
+        assert session.orchestrator is orchestrator
+        assert session.pipeline is pipeline
+
+    def test_does_not_mutate_agent_composed_defaults(self) -> None:
+        agent = Agent()
+        default_orchestrator = agent.execution_orchestrator
+        default_pipeline = agent.execution_pipeline
+        plan = PlanningEngine().plan("fix the wifi")
+        agent.create_execution_session(plan)
+        assert agent.execution_orchestrator is default_orchestrator
+        assert agent.execution_pipeline is default_pipeline
+        assert agent.execution_orchestrator.order == ()
+
+    def test_no_orchestrator_state_changes(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("fix the wifi")
+        session = agent.create_execution_session(plan)
+        assert session.orchestrator.get_state(plan.tasks[0].id) == TaskState.PENDING
+
+    def test_deterministic_for_same_plan(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("fix the wifi")
+        session1 = agent.create_execution_session(plan)
+        session2 = agent.create_execution_session(plan)
+        assert session1.id == session2.id
+        assert session1.orchestrator.order == session2.orchestrator.order
+
+
 class TestNoForbiddenIntegration:
     def test_agent_module_only_imports_foundation_siblings(self) -> None:
         import ast
@@ -280,7 +335,9 @@ class TestNoForbiddenIntegration:
             "core.agent.reflection_manager",
             "core.execution_orchestrator",
             "core.execution_pipeline",
+            "core.execution_session",
             "core.planner",
+            "core.planner_execution_orchestrator_adapter",
             "datetime",
             "typing",
             "__future__",

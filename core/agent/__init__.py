@@ -11,7 +11,7 @@ reasoning, planning, tool execution, or persistence of its own.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Mapping
 
 from core.agent.context_manager import ContextManager
 from core.agent.history_manager import HistoryManager
@@ -22,13 +22,16 @@ from core.agent.reasoning_manager import ReasoningManager
 from core.agent.reflection_manager import ReflectionManager
 from core.execution_orchestrator import ExecutionOrchestrator
 from core.execution_pipeline import ExecutionPipeline
+from core.execution_session import ExecutionSession, create_session
 from core.planner import ExecutionPlan, Goal, PlanningEngine
+from core.planner_execution_orchestrator_adapter import build_orchestrator_for_plan
 
 __all__ = [
     "Agent",
     "ContextManager",
     "ExecutionOrchestrator",
     "ExecutionPipeline",
+    "ExecutionSession",
     "HistoryManager",
     "KnowledgeManager",
     "LearningManager",
@@ -180,6 +183,52 @@ class Agent:
     def execution_pipeline(self) -> ExecutionPipeline:
         """The composed ExecutionPipeline instance (v3.5 runtime, unchanged)."""
         return self._execution_pipeline
+
+    def create_execution_session(
+        self,
+        plan: ExecutionPlan,
+        *,
+        orchestrator: ExecutionOrchestrator | None = None,
+        pipeline: ExecutionPipeline | None = None,
+        project: str | None = None,
+        session_id: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> ExecutionSession:
+        """Build an ``ExecutionSession`` for ``plan`` (v3.8 end-to-end flow, Phase 1).
+
+        Pure orchestration — reuses existing modules, adds no new
+        logic of its own:
+
+        - ``orchestrator`` is used as-is if supplied (reuse); otherwise
+          one is built via the existing
+          ``core.planner_execution_orchestrator_adapter.build_orchestrator_for_plan(plan)``.
+        - ``pipeline`` is used as-is if supplied (reuse); otherwise one
+          is built via the existing
+          ``core.execution_pipeline.ExecutionPipeline(orchestrator, plan, project=project)``.
+        - The three are combined into an ``ExecutionSession`` via the
+          existing ``core.execution_session.create_session``.
+
+        No task is executed, no ``mark_*`` method is called on any
+        orchestrator (no state mutation), and this call never touches
+        ``self._execution_orchestrator`` / ``self._execution_pipeline``
+        — Agent's own composed defaults are left exactly as they were.
+        Deterministic given the same ``plan`` and injected dependencies.
+        """
+        resolved_orchestrator = (
+            orchestrator if orchestrator is not None else build_orchestrator_for_plan(plan)
+        )
+        resolved_pipeline = (
+            pipeline
+            if pipeline is not None
+            else ExecutionPipeline(resolved_orchestrator, plan, project=project)
+        )
+        return create_session(
+            plan,
+            resolved_orchestrator,
+            resolved_pipeline,
+            session_id=session_id,
+            metadata=metadata,
+        )
 
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.
