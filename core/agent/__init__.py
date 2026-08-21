@@ -24,6 +24,7 @@ from core.agent.reflection_manager import ReflectionManager
 from core.execution_coordinator import CoordinationSnapshot, ExecutionCoordinator
 from core.execution_orchestrator import ExecutionOrchestrator
 from core.execution_pipeline import ExecutionPipeline
+from core.execution_result import ExecutionResult, build_result_from_session
 from core.execution_session import ExecutionSession, create_session
 from core.planner import ExecutionPlan, Goal, PlanningEngine
 from core.planner_execution_orchestrator_adapter import build_orchestrator_for_plan
@@ -36,6 +37,7 @@ __all__ = [
     "ExecutionCoordinator",
     "ExecutionOrchestrator",
     "ExecutionPipeline",
+    "ExecutionResult",
     "ExecutionSession",
     "HistoryManager",
     "KnowledgeManager",
@@ -295,6 +297,34 @@ class Agent:
             for descriptor in snapshot.ready_descriptors
         )
         return snapshot, context_bundles
+
+    def execute_request(
+        self,
+        goal: str,
+        *,
+        project: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> ExecutionResult:
+        """First complete executable request (v4.3): goal -> Planning ->
+        Execution -> ProblemSolver Context -> existing ProblemSolver ->
+        immutable ``ExecutionResult``. STOP.
+
+        Pure glue only — no new runtime object is introduced;
+        ``ExecutionResult`` already exists (v3.5). Reuses
+        ``self.planning.plan``, ``self.create_execution_session``,
+        ``self.coordinate_execution`` (Planning + Execution), feeds
+        each ready descriptor's ``gather_context_kwargs`` to the
+        existing ``core.problem_solver.gather_context`` (read-only:
+        recall/why only, no write), and returns
+        ``core.execution_result.build_result_from_session(session)``.
+        No Skill invocation, no Memory write, no AI call.
+        """
+        plan = self.planning.plan(goal)
+        session = self.create_execution_session(plan, project=project, metadata=metadata)
+        coordination = self.coordinate_execution(session)
+        for descriptor in coordination.ready_descriptors:
+            gather_context(**descriptor.gather_context_kwargs)
+        return build_result_from_session(session)
 
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.

@@ -14,6 +14,7 @@ from core.agent.reasoning_manager import ReasoningManager
 from core.agent.reflection_manager import ReflectionManager
 from core.execution_orchestrator import ExecutionOrchestrator, OrchestratedTask, TaskState
 from core.execution_pipeline import ExecutionPipeline
+from core.execution_result import ExecutionResult
 from core.execution_session import ExecutionSession
 from core.planner import ExecutionPlan, PlanningEngine
 
@@ -375,6 +376,31 @@ class TestHandleRequestWithContext:
         assert session.orchestrator.snapshot() == before
 
 
+class TestExecuteRequest:
+    @pytest.fixture(autouse=True)
+    def _stub_memory_engine(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from core import problem_solver
+
+        monkeypatch.setattr(problem_solver, "recall", lambda **kwargs: [])
+        monkeypatch.setattr(problem_solver, "why", lambda *args, **kwargs: [])
+
+    def test_returns_execution_result(self) -> None:
+        agent = Agent()
+        result = agent.execute_request("fix the wifi")
+        assert isinstance(result, ExecutionResult)
+        assert result.progress.total == 1
+        assert result.progress.pending == 1
+        assert result.success is False  # no task executed, still pending
+
+    def test_no_task_execution_or_state_mutation(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("fix the wifi")
+        session = agent.create_execution_session(plan)
+        before = session.orchestrator.snapshot()
+        agent.execute_request("fix the wifi")
+        assert session.orchestrator.snapshot() == before
+
+
 class TestNoForbiddenIntegration:
     def test_agent_module_only_imports_foundation_siblings(self) -> None:
         import ast
@@ -397,6 +423,7 @@ class TestNoForbiddenIntegration:
             "core.execution_coordinator",
             "core.execution_orchestrator",
             "core.execution_pipeline",
+            "core.execution_result",
             "core.execution_session",
             "core.planner",
             "core.planner_execution_orchestrator_adapter",
