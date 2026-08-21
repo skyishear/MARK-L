@@ -20,6 +20,7 @@ from core.agent.learning_manager import LearningManager
 from core.agent.memory_index_manager import MemoryIndexManager
 from core.agent.reasoning_manager import ReasoningManager
 from core.agent.reflection_manager import ReflectionManager
+from core.execution_coordinator import CoordinationSnapshot, ExecutionCoordinator
 from core.execution_orchestrator import ExecutionOrchestrator
 from core.execution_pipeline import ExecutionPipeline
 from core.execution_session import ExecutionSession, create_session
@@ -28,7 +29,9 @@ from core.planner_execution_orchestrator_adapter import build_orchestrator_for_p
 
 __all__ = [
     "Agent",
+    "CoordinationSnapshot",
     "ContextManager",
+    "ExecutionCoordinator",
     "ExecutionOrchestrator",
     "ExecutionPipeline",
     "ExecutionSession",
@@ -229,6 +232,16 @@ class Agent:
             session_id=session_id,
             metadata=metadata,
         )
+
+    def coordinate_execution(self, session: ExecutionSession) -> CoordinationSnapshot:
+        """Coordinate ``session`` via the existing ``ExecutionCoordinator`` (v4.0).
+
+        Pure delegation — constructs no new logic: builds
+        ``ExecutionCoordinator(session)`` and returns its
+        ``coordinate()`` result unchanged. Read-only, deterministic,
+        no state mutation, no execution.
+        """
+        return ExecutionCoordinator(session).coordinate()
 
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.

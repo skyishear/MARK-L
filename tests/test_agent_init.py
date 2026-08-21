@@ -314,6 +314,24 @@ class TestCreateExecutionSession:
         assert session1.orchestrator.order == session2.orchestrator.order
 
 
+class TestCoordinateExecution:
+    def test_delegates_to_execution_coordinator(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("step one then step two")
+        session = agent.create_execution_session(plan)
+        snapshot = agent.coordinate_execution(session)
+        assert snapshot.session_id == session.id
+        assert snapshot.ready_task_ids == (plan.tasks[0].id,)
+
+    def test_no_state_mutation(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("fix the wifi")
+        session = agent.create_execution_session(plan)
+        before = session.orchestrator.snapshot()
+        agent.coordinate_execution(session)
+        assert session.orchestrator.snapshot() == before
+
+
 class TestNoForbiddenIntegration:
     def test_agent_module_only_imports_foundation_siblings(self) -> None:
         import ast
@@ -333,6 +351,7 @@ class TestNoForbiddenIntegration:
             "core.agent.memory_index_manager",
             "core.agent.reasoning_manager",
             "core.agent.reflection_manager",
+            "core.execution_coordinator",
             "core.execution_orchestrator",
             "core.execution_pipeline",
             "core.execution_session",
