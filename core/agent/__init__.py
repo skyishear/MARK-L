@@ -243,6 +243,30 @@ class Agent:
         """
         return ExecutionCoordinator(session).coordinate()
 
+    def handle_request(
+        self,
+        goal: str,
+        *,
+        project: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> CoordinationSnapshot:
+        """Run the full request lifecycle (v4.1): goal -> PlanningEngine ->
+        ExecutionCoordinator -> ExecutionPipeline -> Planner->ProblemSolver
+        Adapter -> immutable handoff objects. STOP — no execution beyond
+        this point.
+
+        Pure glue over existing methods, in order:
+        ``self.planning.plan(goal)`` -> ``self.create_execution_session(plan, ...)``
+        -> ``self.coordinate_execution(session)``. The pipeline's
+        ``ready_descriptors()`` (already built via the existing
+        Planner->ProblemSolver adapter) are included in the returned
+        snapshot. No task execution, no ProblemSolver/Skill/Memory/AI
+        call, no state mutation.
+        """
+        plan = self.planning.plan(goal)
+        session = self.create_execution_session(plan, project=project, metadata=metadata)
+        return self.coordinate_execution(session)
+
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.
 

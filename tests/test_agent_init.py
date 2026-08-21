@@ -332,6 +332,23 @@ class TestCoordinateExecution:
         assert session.orchestrator.snapshot() == before
 
 
+class TestHandleRequest:
+    def test_full_lifecycle_returns_ready_descriptors(self) -> None:
+        agent = Agent()
+        snapshot = agent.handle_request("step one then step two", project="mark_l")
+        assert len(snapshot.ready_descriptors) == 1
+        descriptor = snapshot.ready_descriptors[0]
+        assert descriptor.work_item.problem == "step one"
+        assert descriptor.gather_context_kwargs["project"] == "mark_l"
+
+    def test_deterministic_for_same_goal(self) -> None:
+        agent = Agent()
+        first = agent.handle_request("fix the wifi")
+        second = agent.handle_request("fix the wifi")
+        assert first.session_id == second.session_id
+        assert first.ready_task_ids == second.ready_task_ids
+
+
 class TestNoForbiddenIntegration:
     def test_agent_module_only_imports_foundation_siblings(self) -> None:
         import ast
