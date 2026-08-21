@@ -11,6 +11,7 @@ reasoning, planning, tool execution, or persistence of its own.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from core.agent.context_manager import ContextManager
@@ -26,6 +27,7 @@ from core.execution_pipeline import ExecutionPipeline
 from core.execution_session import ExecutionSession, create_session
 from core.planner import ExecutionPlan, Goal, PlanningEngine
 from core.planner_execution_orchestrator_adapter import build_orchestrator_for_plan
+from core.problem_solver import gather_context
 
 __all__ = [
     "Agent",
@@ -266,6 +268,33 @@ class Agent:
         plan = self.planning.plan(goal)
         session = self.create_execution_session(plan, project=project, metadata=metadata)
         return self.coordinate_execution(session)
+
+    def handle_request_with_context(
+        self,
+        goal: str,
+        *,
+        project: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> tuple[CoordinationSnapshot, tuple[Mapping[str, Any], ...]]:
+        """Extend ``handle_request`` (v4.1) with the ProblemSolver step (v4.2):
+        goal -> ... -> Planner->ProblemSolver Adapter -> existing
+        ProblemSolver integration (``core.problem_solver.gather_context``)
+        -> STOP.
+
+        Reuses ``self.handle_request(...)`` unchanged, then calls the
+        existing ``gather_context(**kwargs)`` for every ready
+        descriptor's already-built ``gather_context_kwargs``.
+        ``gather_context`` only reads MemoryEngine (no writes); no
+        Skill is invoked and no AI provider is called. Returns the
+        snapshot together with each read-only context bundle; nothing
+        further is done with the results.
+        """
+        snapshot = self.handle_request(goal, project=project, metadata=metadata)
+        context_bundles = tuple(
+            MappingProxyType(dict(gather_context(**descriptor.gather_context_kwargs)))
+            for descriptor in snapshot.ready_descriptors
+        )
+        return snapshot, context_bundles
 
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.

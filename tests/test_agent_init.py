@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from core.agent import Agent
 from core.agent.context_manager import ContextManager
 from core.agent.history_manager import HistoryManager
@@ -349,6 +351,30 @@ class TestHandleRequest:
         assert first.ready_task_ids == second.ready_task_ids
 
 
+class TestHandleRequestWithContext:
+    @pytest.fixture(autouse=True)
+    def _stub_memory_engine(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from core import problem_solver
+
+        monkeypatch.setattr(problem_solver, "recall", lambda **kwargs: [])
+        monkeypatch.setattr(problem_solver, "why", lambda *args, **kwargs: [])
+
+    def test_returns_snapshot_and_context_bundle_per_ready_task(self) -> None:
+        agent = Agent()
+        snapshot, bundles = agent.handle_request_with_context("fix the wifi")
+        assert len(bundles) == 1
+        assert bundles[0]["known_solutions"] == []
+        assert len(snapshot.ready_descriptors) == 1
+
+    def test_no_state_mutation(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("fix the wifi")
+        session = agent.create_execution_session(plan)
+        before = session.orchestrator.snapshot()
+        agent.handle_request_with_context("fix the wifi")
+        assert session.orchestrator.snapshot() == before
+
+
 class TestNoForbiddenIntegration:
     def test_agent_module_only_imports_foundation_siblings(self) -> None:
         import ast
@@ -374,7 +400,9 @@ class TestNoForbiddenIntegration:
             "core.execution_session",
             "core.planner",
             "core.planner_execution_orchestrator_adapter",
+            "core.problem_solver",
             "datetime",
+            "types",
             "typing",
             "__future__",
         }
