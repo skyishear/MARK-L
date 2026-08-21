@@ -29,6 +29,7 @@ from core.execution_session import ExecutionSession, create_session
 from core.planner import ExecutionPlan, Goal, PlanningEngine
 from core.planner_execution_orchestrator_adapter import build_orchestrator_for_plan
 from core.problem_solver import gather_context
+from core.skill_registry import is_registered
 
 __all__ = [
     "Agent",
@@ -325,6 +326,46 @@ class Agent:
         for descriptor in coordination.ready_descriptors:
             gather_context(**descriptor.gather_context_kwargs)
         return build_result_from_session(session)
+
+    def execute_request_with_skill_check(
+        self,
+        goal: str,
+        *,
+        project: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> tuple[ExecutionResult, tuple[Mapping[str, Any], ...]]:
+        """Extend ``execute_request`` (v4.3) with a controlled SkillRegistry
+        check (v4.4): completed ProblemSolver output -> existing
+        ``core.skill_registry.is_registered`` -> STOP before actual
+        tool execution (``dispatch`` is never called).
+
+        Pure glue: reuses ``self.planning.plan``,
+        ``self.create_execution_session``, ``self.coordinate_execution``,
+        and ``core.problem_solver.gather_context`` exactly as
+        ``execute_request`` does, then for each ready descriptor calls
+        the existing, read-only ``is_registered(descriptor.work_item.problem)``
+        to report whether a matching skill exists. Returns the existing
+        ``ExecutionResult`` (v3.5) plus one read-only skill-check
+        record per ready task, in deterministic order. No Memory
+        write, no AI call, no Skill execution.
+        """
+        plan = self.planning.plan(goal)
+        session = self.create_execution_session(plan, project=project, metadata=metadata)
+        coordination = self.coordinate_execution(session)
+        skill_checks = []
+        for descriptor in coordination.ready_descriptors:
+            gather_context(**descriptor.gather_context_kwargs)
+            skill_checks.append(
+                MappingProxyType(
+                    {
+                        "task_id": descriptor.task_id,
+                        "tool_name": descriptor.work_item.problem,
+                        "is_registered": is_registered(descriptor.work_item.problem),
+                    }
+                )
+            )
+        result = build_result_from_session(session)
+        return result, tuple(skill_checks)
 
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.

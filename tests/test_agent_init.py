@@ -401,6 +401,41 @@ class TestExecuteRequest:
         assert session.orchestrator.snapshot() == before
 
 
+class TestExecuteRequestWithSkillCheck:
+    @pytest.fixture(autouse=True)
+    def _stub_memory_engine(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from core import problem_solver
+
+        monkeypatch.setattr(problem_solver, "recall", lambda **kwargs: [])
+        monkeypatch.setattr(problem_solver, "why", lambda *args, **kwargs: [])
+
+    def test_returns_result_and_skill_check_per_ready_task(self) -> None:
+        agent = Agent()
+        result, checks = agent.execute_request_with_skill_check("fix the wifi")
+        assert isinstance(result, ExecutionResult)
+        assert len(checks) == 1
+        assert checks[0]["tool_name"] == "fix the wifi"
+        assert checks[0]["is_registered"] is False
+
+    def test_skill_check_is_read_only(self) -> None:
+        agent = Agent()
+        _, checks = agent.execute_request_with_skill_check("fix the wifi")
+        try:
+            checks[0]["is_registered"] = True  # type: ignore[index]
+            raised = False
+        except TypeError:
+            raised = True
+        assert raised
+
+    def test_no_task_execution_or_state_mutation(self) -> None:
+        agent = Agent()
+        plan = PlanningEngine().plan("fix the wifi")
+        session = agent.create_execution_session(plan)
+        before = session.orchestrator.snapshot()
+        agent.execute_request_with_skill_check("fix the wifi")
+        assert session.orchestrator.snapshot() == before
+
+
 class TestNoForbiddenIntegration:
     def test_agent_module_only_imports_foundation_siblings(self) -> None:
         import ast
@@ -428,6 +463,7 @@ class TestNoForbiddenIntegration:
             "core.planner",
             "core.planner_execution_orchestrator_adapter",
             "core.problem_solver",
+            "core.skill_registry",
             "datetime",
             "types",
             "typing",
