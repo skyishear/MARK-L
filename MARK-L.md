@@ -221,4 +221,20 @@ A milestone is complete only when:
 
 ---
 
+# Implementation Agent Rules
+
+These rules apply to every implementation agent,
+present or future (DSH, Codex, Claude, Gemini CLI, Aider, etc.).
+
+- Read MARK-L.md exactly once.
+- Follow referenced governance documents.
+- Do not redesign architecture.
+- Implement only the requested milestone.
+- Prefer minimal diffs.
+- Run only affected tests.
+- Never modify unrelated files.
+- Reuse existing implementations whenever possible.
+- Minimize token usage.
+- Stop immediately after completing the requested milestone. Do not continue with follow-up work unless explicitly requested.
+
 # End of MARK L Master Governance
