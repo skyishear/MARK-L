@@ -417,6 +417,35 @@ class TestExecuteRequestWithSkillCheck:
         assert checks[0]["tool_name"] == "fix the wifi"
         assert checks[0]["is_registered"] is False
 
+    def test_complete_lifecycle_gathers_context_before_skill_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import core.agent as agent_module
+
+        calls: list[tuple[str, object]] = []
+
+        def gather(**kwargs: object) -> dict[str, object]:
+            calls.append(("context", kwargs))
+            return {}
+
+        def registered(tool_name: str) -> bool:
+            calls.append(("skill", tool_name))
+            return False
+
+        monkeypatch.setattr(agent_module, "gather_context", gather)
+        monkeypatch.setattr(agent_module, "is_registered", registered)
+
+        result, checks = Agent().execute_request_with_skill_check(
+            "fix the wifi", project="mark_l"
+        )
+
+        assert result.progress.pending == 1
+        assert calls == [
+            ("context", {"problem": "fix the wifi", "project": "mark_l"}),
+            ("skill", "fix the wifi"),
+        ]
+        assert checks[0]["is_registered"] is False
+
     def test_skill_check_is_read_only(self) -> None:
         agent = Agent()
         _, checks = agent.execute_request_with_skill_check("fix the wifi")
