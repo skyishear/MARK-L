@@ -492,6 +492,7 @@ class TestNoForbiddenIntegration:
             "core.planner",
             "core.planner_execution_orchestrator_adapter",
             "core.problem_solver",
+            "core.skill_dispatch",
             "core.skill_registry",
             "datetime",
             "types",

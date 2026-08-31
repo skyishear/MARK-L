@@ -163,6 +163,7 @@ class TestArchitectureFreeze:
             "PlanningEngine",
             "ReasoningManager",
             "ReflectionManager",
+            "SkillDispatchDecision",
         }
         assert set(agent_module.__all__) == expected
 

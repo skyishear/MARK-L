@@ -29,6 +29,7 @@ from core.execution_session import ExecutionSession, create_session
 from core.planner import ExecutionPlan, Goal, PlanningEngine
 from core.planner_execution_orchestrator_adapter import build_orchestrator_for_plan
 from core.problem_solver import gather_context
+from core.skill_dispatch import SkillDispatchDecision, build_dispatch_decision
 from core.skill_registry import is_registered
 
 __all__ = [
@@ -47,6 +48,7 @@ __all__ = [
     "PlanningEngine",
     "ReasoningManager",
     "ReflectionManager",
+    "SkillDispatchDecision",
 ]
 
 
@@ -366,6 +368,43 @@ class Agent:
             )
         result = build_result_from_session(session)
         return result, tuple(skill_checks)
+
+    def execute_request_with_dispatch_decision(
+        self,
+        goal: str,
+        *,
+        project: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> tuple[ExecutionResult, tuple[SkillDispatchDecision, ...]]:
+        """Extend ``execute_request_with_skill_check`` (v4.4) with the
+        controlled dispatch decision (v5.0): existing execution chain
+        (Planning -> Session -> Coordinator -> ProblemSolver Context ->
+        SkillRegistry check) -> immutable ``SkillDispatchDecision``
+        per ready task -> STOP.
+
+        Pure glue over the existing chain: delegates the full lifecycle
+        to ``self.execute_request_with_skill_check`` (which already
+        invokes ``planning``, ``create_execution_session``,
+        ``coordinate_execution``, ``problem_solver.gather_context``,
+        and ``core.skill_registry.is_registered``), then maps each
+        returned read-only skill-check record to an immutable
+        ``SkillDispatchDecision`` via the pure
+        ``core.skill_dispatch.build_dispatch_decision``. No ``dispatch``
+        call, no Memory write, no AI call, no skill execution, no tool
+        invocation.
+        """
+        result, skill_checks = self.execute_request_with_skill_check(
+            goal, project=project, metadata=metadata
+        )
+        decisions = tuple(
+            build_dispatch_decision(
+                task_id=check["task_id"],
+                tool_name=check["tool_name"],
+                context={"project": project},
+            )
+            for check in skill_checks
+        )
+        return result, decisions
 
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.
