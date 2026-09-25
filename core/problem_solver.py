@@ -18,9 +18,8 @@ Two responsibilities, matching the architecture spec:
    On failure it can retry once, and either way the outcome gets handed
    to record_outcome() so future problem-solving benefits from it.
 
-Both responsibilities are backed by memory.core_memory's
-'problems_solutions' category (structured problem/cause/solution/outcome
-entries) — this IS the "failure memory" from spec §12.
+Both responsibilities are backed by ``core.memory_engine.MemoryEngine``
+(via the Agent-owned instance, installed through ``set_memory_engine``).
 """
 from __future__ import annotations
 
@@ -28,7 +27,148 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from memory.core_memory import remember, recall, record_decision, why
+from core.memory_engine import MemoryEngine
+
+# ── Engine wiring ─────────────────────────────────────────────────────────
+
+# A single, module-level MemoryEngine instance is the canonical
+# memory backend. The Agent installs its own MemoryEngine into this
+# slot at construction time; any other consumer can also call
+# ``set_memory_engine`` to point the module at a different engine.
+_engine: MemoryEngine = MemoryEngine()
+
+
+def set_memory_engine(engine: MemoryEngine) -> None:
+    """Install ``engine`` as the canonical memory backend for this
+    module. Idempotent; resets to a fresh engine on ``None``.
+    """
+    global _engine
+    _engine = engine if engine is not None else MemoryEngine()
+
+
+def get_memory_engine() -> MemoryEngine:
+    """Return the currently installed memory engine (never ``None``)."""
+    return _engine
+
+
+# ── Memory primitives (routed through the installed engine) ───────────────
+
+def _remember(
+    category: str,
+    key: str,
+    value: str,
+    *,
+    importance: int = 3,
+    confidence: float = 1.0,
+    source: str = "solver",
+    project: Optional[str] = None,
+    memory_type: str = "permanent",
+    sensitive: bool = False,
+    ttl_days: Optional[int] = None,
+) -> str:
+    return _engine.remember(
+        category,
+        key,
+        value,
+        importance=importance,
+        confidence=confidence,
+        source=source,
+        project=project,
+        memory_type=memory_type,
+        sensitive=sensitive,
+        ttl_days=ttl_days,
+    )
+
+
+def _recall(
+    *,
+    query: Optional[str] = None,
+    category: Optional[str] = None,
+    project: Optional[str] = None,
+    memory_type: Optional[str] = None,
+    limit: int = 25,
+) -> list[dict]:
+    return _engine.recall(
+        query=query,
+        category=category,
+        project=project,
+        memory_type=memory_type,
+        limit=limit,
+    )
+
+
+def _forget(
+    *,
+    key: Optional[str] = None,
+    category: Optional[str] = None,
+    project: Optional[str] = None,
+) -> int:
+    return _engine.forget(key=key, category=category, project=project)
+
+
+# Public, module-level proxies. These names are stable so existing
+# callers (and tests) can monkeypatch them in place to redirect
+# the canonical memory backend for the duration of a test.
+def remember(
+    category: str,
+    key: str,
+    value: str,
+    *,
+    importance: int = 3,
+    confidence: float = 1.0,
+    source: str = "solver",
+    project: Optional[str] = None,
+    memory_type: str = "permanent",
+    sensitive: bool = False,
+    ttl_days: Optional[int] = None,
+) -> str:
+    return _remember(
+        category, key, value,
+        importance=importance,
+        confidence=confidence,
+        source=source,
+        project=project,
+        memory_type=memory_type,
+        sensitive=sensitive,
+        ttl_days=ttl_days,
+    )
+
+
+def recall(
+    *,
+    query: Optional[str] = None,
+    category: Optional[str] = None,
+    project: Optional[str] = None,
+    memory_type: Optional[str] = None,
+    limit: int = 25,
+) -> list[dict]:
+    return _recall(
+        query=query,
+        category=category,
+        project=project,
+        memory_type=memory_type,
+        limit=limit,
+    )
+
+
+def forget(
+    *,
+    key: Optional[str] = None,
+    category: Optional[str] = None,
+    project: Optional[str] = None,
+) -> int:
+    return _forget(key=key, category=category, project=project)
+
+
+def why(project: Optional[str] = None, query: Optional[str] = None) -> list[dict]:
+    """Return a list of past project decisions relevant to ``query``.
+
+    In v8.1 this is a stub returning an empty list — decisions live
+    in a future layer. Kept on the module surface so the existing
+    ``gather_context`` API and downstream test fixtures can monkey-
+    patch it in place.
+    """
+    return []
 
 
 # ── Diagnosis support ────────────────────────────────────────────────────
@@ -39,8 +179,8 @@ def gather_context(problem: str, project: Optional[str] = None) -> dict:
     decisions (with their reasoning), and any other loosely related
     facts. Gemini uses this instead of reasoning from zero."""
     known_solutions = recall(query=problem, category="problems_solutions", limit=5)
-    related_facts    = recall(query=problem, project=project, limit=8)
-    related_decisions = why(project, problem) if project else []
+    related_facts = recall(query=problem, project=project, limit=8)
+    related_decisions: list[dict] = why(project, problem) if project else []
 
     return {
         "known_solutions": known_solutions,
@@ -166,3 +306,21 @@ def verify_url_reachable(url: str, timeout: float = 4.0) -> bool:
             return resp.status_code < 400
         except Exception:
             return False
+
+
+__all__ = [
+    "set_memory_engine",
+    "get_memory_engine",
+    "remember",
+    "recall",
+    "forget",
+    "why",
+    "gather_context",
+    "format_context_for_solver",
+    "record_outcome",
+    "ExecutionResult",
+    "execute_and_verify",
+    "verify_path_exists",
+    "verify_process_running",
+    "verify_url_reachable",
+]

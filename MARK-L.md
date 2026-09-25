@@ -1,91 +1,72 @@
-# MARK L
+# MARK-L
 
-> Master Governance Entry Point
+> Master Governance Document
 
-This is the primary entry point for every AI agent working on MARK L.
+This is the master governance document for every AI agent working on
+MARK-L. Read it exactly once per task, after `CLAUDE.md`.
 
-Before performing any work, read this document exactly once.
+---
+
+# Identity
+
+- **EDITH** is the project and final system identity.
+- **MARK-L** is the repository, codebase, filenames, documentation
+  references, prompts and working implementation identity.
+
+They are one project. Do not rename MARK-L to EDITH unless a future
+milestone explicitly authorizes it.
 
 ---
 
 # Purpose
 
-MARK L is a long-term AI operating system.
-
-The objective is to build a stable, scalable, modular, maintainable and production-quality AI platform.
-
-Every implementation must preserve long-term architecture.
+MARK-L is the working implementation of EDITH, a long-term AI operating
+system. The objective is a stable, scalable, modular, maintainable and
+production-quality AI platform. Every change must preserve long-term
+architecture.
 
 ---
 
 # Repository Source of Truth
 
-The repository is the only source of truth.
-
-Never assume information from previous conversations.
-
-Never invent missing architecture.
-
-If repository content conflicts with conversation instructions, report the conflict before making changes.
+The repository — code, tests and git history — is the only source of
+truth. Never assume information from previous conversations. Never
+invent missing architecture. If repository content conflicts with an
+instruction, report the conflict before making changes.
 
 ---
 
-# Repository Governance
+# Governance Hierarchy
 
-Read the following documents exactly once and only when required.
+```
+CLAUDE.md                      operational entry point
+    ↓
+MARK-L.md                      master governance (this document)
+    ↓
+AUTONOMOUS_BUILD_PROTOCOL.md   autonomous execution protocol
+    ↓
+ROADMAP.md                     living milestone/checkpoint state
+    ↓
+docs/*.md                      engineering standards / deferred work
+```
 
-## 1. CLAUDE.md
+`readme.md` is separate public project documentation.
 
-Defines:
+Roles:
 
-- Repository development rules
-- Coding philosophy
-- Engineering standards
-- Architecture constraints
-
----
-
-## 2. PROMPT_RULES.md
-
-Defines:
-
-- Prompt workflow
-- Output requirements
-- Token efficiency rules
-- Response format
-- ZIP workflow
-
----
-
-## 3. ROADMAP.md
-
-Defines:
-
-- Long-term roadmap
-- Current development phase
-- Planned milestones
-
----
-
-## 4. PROJECT_STATUS.md
-
-Defines:
-
-- Current implementation status
-- Completed work
-- Remaining work
-- Current milestone
-
----
-
-## 5. DSH_ROLE.md (if present)
-
-Defines:
-
-- Lead Software Engineer responsibilities
-- Authority
-- Restrictions
-- Engineering workflow
+- **CLAUDE.md** — concise operational instructions and pointers.
+- **MARK-L.md** — philosophy, architecture policy, scope discipline,
+  general governance.
+- **AUTONOMOUS_BUILD_PROTOCOL.md** — authoritative for autonomous
+  continuation: verification gates, STOP conditions, failure recovery,
+  security, checkpoint reporting. This document does not restate it.
+- **ROADMAP.md** — living checkpoint: completed milestones, current
+  checkpoint and verified test state, active milestone, next discovered
+  milestone with its justification, deferred areas. It is a history and
+  checkpoint, never a ceiling on development. This document does not
+  restate it.
+- **docs/TECHNICAL_DEBT.md** — deferred ideas explicitly not to be
+  implemented before their milestone.
 
 ---
 
@@ -93,118 +74,113 @@ Defines:
 
 Always prefer:
 
-- Small changes
-- Minimal diffs
-- Backward compatibility
-- Constructor injection
-- Existing implementations
-- Existing architecture
+- small changes and minimal diffs;
+- backward compatibility;
+- explicit constructor injection;
+- existing implementations and existing architecture;
+- immutable records, defensive copies, deterministic behavior;
+- independently testable, replaceable components.
 
-Never introduce unnecessary complexity.
+Never introduce unnecessary complexity, speculative abstractions,
+global mutable state, hidden coupling or circular imports.
 
 ---
 
 # Architecture Policy
 
-Architecture is considered stable.
-
-Do not redesign architecture.
-
-Do not introduce new architectural layers unless fixing a proven architectural defect.
-
-Prefer extending existing implementations instead of creating new abstractions.
-
----
-
-# Development Workflow
-
-1. Read required governance documents.
-2. Read only the files required for the milestone.
-3. Implement only the requested milestone.
-4. Modify only directly affected files.
-5. Run only affected tests.
-6. Package the repository if requested.
-7. Stop after completion.
+- The **legacy v3.x execution stack** (planner, execution orchestrator /
+  pipeline / session / coordinator / result / progress / event, skill
+  registry, skill dispatch) is **frozen** and read-only.
+- The **v8.x Foundation and tool stack** is the active, additive
+  extension surface. New capability is added as new v8.x modules bridged
+  to the legacy stack through explicit adapters, never by modifying it.
+- Do not redesign architecture. Do not introduce new architectural
+  layers unless fixing a proven defect or fulfilling a roadmap milestone —
+  including a milestone formally discovered and recorded under
+  `AUTONOMOUS_BUILD_PROTOCOL.md` §25 (evidence-justified, audited,
+  additive, smallest missing layer first).
+- Prefer extending existing v8.x modules over new abstractions, but do
+  not reuse a legacy abstraction where doing so creates semantic
+  coupling between the two runtimes.
+- `core/agent/__init__.py` is a composition root: thin wiring only.
+- Public APIs and `core.agent.__all__` are stable unless a milestone
+  explicitly authorizes a change.
 
 ---
 
 # Scope Control
 
-Do not expand scope.
-
-Do not perform unrelated refactoring.
-
-Do not rewrite stable implementations.
-
-Do not modify unrelated files.
-
-Do not introduce speculative improvements.
+- Implement only the current milestone (or an explicitly authorized,
+  tightly coupled batch).
+- Do not expand scope, refactor unrelated code, rewrite stable
+  implementations, or modify unrelated files.
+- Do not implement future systems early (see
+  `AUTONOMOUS_BUILD_PROTOCOL.md` §14 and `docs/TECHNICAL_DEBT.md`).
 
 ---
 
-# Token Efficiency
+# Development Workflow
 
-Token efficiency is a permanent requirement.
-
-Read repository documents only once.
-
-Never reread unchanged files.
-
-Avoid unnecessary repository exploration.
-
-Avoid unnecessary explanations.
-
-Avoid unnecessary summaries.
-
-Keep responses implementation-focused.
-
-Minimize output tokens.
-
----
-
-# Output Policy
-
-Prefer unified diffs for modified files.
-
-Avoid printing complete contents of existing files.
-
-Print complete contents only for newly created files when explicitly required.
-
-Keep responses concise.
+1. Read the governance documents once, in hierarchy order.
+2. Establish the current repository state (`git status`, roadmap,
+   full-suite baseline).
+3. Read only the files required for the milestone; perform discovery
+   before touching an architectural boundary.
+4. Implement the milestone with tests.
+5. Pass all verification gates (`AUTONOMOUS_BUILD_PROTOCOL.md` §11).
+6. Produce the checkpoint report.
+7. **Explicit request:** stop and list the next milestone.
+   **Autonomous run:** continue per `AUTONOMOUS_BUILD_PROTOCOL.md` §22;
+   when no milestone is defined, discover, audit and formally record the
+   next justified one (§25) before implementing it. Only a defined STOP
+   condition (§13) ends an autonomous run.
 
 ---
 
 # Testing Policy
 
-Run only the minimum affected tests.
+- Every milestone requires tests; every discovered bug gets a
+  regression test where practical.
+- Run focused tests, then the **entire** suite; completion requires
+  0 failures, 0 errors, 0 unexpected skips.
+- Never weaken, delete, skip or hide tests to make a suite pass.
+- Architecture/import-isolation tests are part of the suite; adjust an
+  existing guard only by the smallest sanctioned change when a new module
+  is a legitimate consumer, and say so in the report.
 
-Do not run the entire test suite unless explicitly required.
+---
 
-Keep test additions minimal.
+# Token Efficiency
+
+Token efficiency is a permanent requirement but never outranks
+correctness, verification or safety.
+
+- Read repository documents once; do not reread unchanged files.
+- Avoid unnecessary exploration, explanation and summaries.
+- Keep responses implementation-focused and concise.
+- Prefer unified diffs for modified files; print full contents only for
+  new files when required.
 
 ---
 
 # Git Policy
 
-Do not rewrite Git history.
-
-Do not modify branches.
-
-Do not change repository structure unless requested.
-
-Keep commits focused on a single milestone.
+- Do not rewrite git history, modify branches, hard-reset or discard
+  uncommitted user work.
+- Do not change repository structure unless requested.
+- Keep commits focused on a single milestone.
+- Report git state at every checkpoint.
 
 ---
 
 # Decision Policy
 
-If the correct implementation is obvious, implement it.
-
-If architecture is unclear, stop and explain the issue.
-
-Never invent architecture.
-
-Never silently change public APIs.
+- If the correct implementation is obvious from repository evidence,
+  implement it.
+- If architecture is ambiguous, a frozen module would need changing, or
+  a breaking change appears necessary, STOP and explain
+  (`AUTONOMOUS_BUILD_PROTOCOL.md` §13).
+- Never invent architecture or silently change public APIs.
 
 ---
 
@@ -212,29 +188,30 @@ Never silently change public APIs.
 
 A milestone is complete only when:
 
-- Requested work is implemented.
-- Existing architecture is preserved.
-- Public APIs remain backward compatible.
-- Tests pass.
-- No unrelated files were modified.
-- Scope was not expanded.
+- the requested work is implemented and tested;
+- existing architecture and frozen modules are preserved;
+- public APIs remain backward compatible;
+- focused tests, the full suite and architecture checks all pass;
+- no unrelated files were modified and scope was not expanded;
+- the checkpoint report reflects real test output.
 
 ---
 
 # Implementation Agent Rules
 
-These rules apply to every implementation agent,
-present or future (DSH, Codex, Claude, Gemini CLI, Aider, etc.).
+These rules apply to every implementation agent, present or future
+(Claude Code, Codex, Gemini CLI, Aider, etc.):
 
-- Read MARK-L.md exactly once.
-- Follow referenced governance documents.
-- Do not redesign architecture.
-- Implement only the requested milestone.
-- Prefer minimal diffs.
-- Run only affected tests.
-- Never modify unrelated files.
-- Reuse existing implementations whenever possible.
-- Minimize token usage.
-- Stop immediately after completing the requested milestone. Do not continue with follow-up work unless explicitly requested.
+- Read `MARK-L.md` exactly once and follow the referenced documents.
+- Do not redesign architecture; implement only the current milestone.
+- Prefer minimal diffs; reuse existing implementations.
+- Never modify unrelated or frozen files.
+- Minimize token usage without skipping verification.
+- After completion: stop for an explicit request, or continue
+  autonomously per `AUTONOMOUS_BUILD_PROTOCOL.md` when running an
+  autonomous build (discovering the next justified milestone when the
+  roadmap has none) — never both silently.
+- Never create a milestone from preference, novelty or a vision document
+  alone; every milestone needs repository evidence and a contract audit.
 
-# End of MARK L Master Governance
+# End of MARK-L Master Governance

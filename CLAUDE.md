@@ -1,62 +1,74 @@
 # CLAUDE.md
 
-## MARK L Repository Context
+Claude Code entry point for the MARK-L repository.
 
-Repository: MARK-L
-Current Version: v3.0.0-foundation
-Status: Stable Foundation
-Git Tag: v3.0.0-foundation
+## Identity
 
-## Repository Is The Source Of Truth
+- **EDITH** — project / final system identity.
+- **MARK-L** — repository, codebase, filenames, docs and prompts.
+  Use MARK-L in code and documentation; do not rename to EDITH.
 
-Always treat the current repository as the only source of truth.
-Never rely on previous conversations or assumptions.
+## Governance Hierarchy
 
-## Architecture Rules
+Read in this order, each exactly once per task:
 
-- Preserve the existing architecture.
-- Make incremental changes only.
-- Never redesign working components.
-- Never rewrite code unless explicitly requested.
-- Never create duplicate implementations.
+1. `CLAUDE.md` — this file: operational entry point.
+2. `MARK-L.md` — master governance: philosophy, architecture policy, scope discipline.
+3. `AUTONOMOUS_BUILD_PROTOCOL.md` — authoritative autonomous execution protocol
+   (verification gates, STOP conditions, failure recovery, checkpoint reports, continuation).
+4. `ROADMAP.md` — living checkpoint: milestone history, current checkpoint,
+   active and next discovered milestone, deferred areas.
+5. `docs/*.md` — engineering standards and deferred-work notes (`docs/TECHNICAL_DEBT.md`).
 
-## Development Rules
+`readme.md` is separate public project documentation.
+When documents overlap, the more specific document is authoritative for its role.
 
-- Modify only the files required for the task.
-- Keep diffs as small as possible.
-- Preserve public APIs unless instructed otherwise.
-- Run only the minimum verification required.
-- Stop after completing the requested task.
-- If additional work is identified, list it under "Next Steps".
+## Source of Truth
 
-## Safety Rules
+The repository — code, tests, git — is the only source of truth.
+Never rely on previous conversations. Verify the current state before acting.
 
-- Never modify unrelated files.
-- Never modify .gitignore unless requested.
-- Never modify Git history.
-- Never modify configuration, secrets, certificates, databases, caches, build artifacts or virtual environments unless explicitly requested.
+## Current Repository State
 
-## Response Format
+- Legacy v3.x execution stack: **frozen** (read-only; see `ROADMAP.md`).
+- Active surface: v8.x Foundation stores, v8.11–v8.20 tool stack, v8.21–v8.25 projection path.
+- Checkpoint: **v8.25 complete**; active milestone: none; next milestone blocked on an
+  open decision recorded in `ROADMAP.md` (the living checkpoint).
+- Verified suite: **1801 passed, 0 failed, 0 errors, 0 skipped**.
 
-Every implementation response should contain:
+Details and history live in `ROADMAP.md` — do not duplicate them here.
 
-1. Analysis
-2. Files Modified
-3. Exact Code Changes
-4. Tests
-5. Breaking Changes
-6. Final Verification
+## Operating Rules
 
-## Current Milestone
+- Preserve existing architecture; incremental, additive changes only.
+- Never redesign, rewrite or duplicate working components.
+- Modify only files required for the task; keep diffs minimal.
+- Preserve public APIs and `core.agent.__all__` unless explicitly instructed.
+- Never modify frozen legacy modules, configuration, secrets, certificates,
+  databases, caches, build artifacts, virtual environments, `.gitignore`
+  or git history unless explicitly requested.
+- Every milestone requires tests and must pass the four verification gates
+  in `AUTONOMOUS_BUILD_PROTOCOL.md` §11 before it is reported complete.
+- Never weaken, skip, delete or hide tests to make a suite pass.
 
-v3.1.0 - Planning Engine
+## Execution Modes
 
-## Completed Milestones
+- **Explicit request** (a named milestone, discovery, audit or fix):
+  implement exactly the requested scope, verify, report, then stop.
+  List further work under "Next Milestone" without starting it.
+- **Autonomous run** (the user says "Continue building MARK-L autonomously"):
+  follow `AUTONOMOUS_BUILD_PROTOCOL.md` — after a milestone passes every
+  gate, take the next roadmap milestone; when none is defined, run
+  architecture-driven milestone discovery (protocol §25), record the
+  justified milestone in `ROADMAP.md` as NOT STARTED, then implement it.
+  Continue until a defined STOP condition (protocol §13) occurs. Roadmap
+  exhaustion alone is not a STOP condition; never ask the user which
+  milestone to build next — derive it from repository evidence or STOP
+  with the exact unresolved architectural question.
 
-- Foundation Architecture
-- Agent Composition Root
-- Foundation Managers
-- Dependency Injection
-- Regression Tests
-- GitHub Sync
-- Golden Snapshot
+## Report Format
+
+Use the checkpoint report defined in `AUTONOMOUS_BUILD_PROTOCOL.md` §23
+(Milestone, Analysis, Files Modified, Exact Code Changes, Tests,
+Architecture Verification, Breaking Changes, Git Diff Summary,
+Final Verification, Next Milestone). Report real test output only.

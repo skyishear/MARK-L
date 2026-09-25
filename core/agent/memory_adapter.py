@@ -42,6 +42,38 @@ class MemoryAdapterError(RuntimeError):
     """Raised when a call made through the adapter is invalid or fails."""
 
 
+def bind_memory_engine(engine: Any) -> tuple[RememberFn, RecallFn, ForgetFn]:
+    """Derive ``(remember, recall, forget)`` callables from a
+    ``MemoryEngine`` instance.
+
+    Pure delegation: the returned callables are thin closures over
+    the engine's methods. They satisfy the ``RememberFn`` /
+    ``RecallFn`` / ``ForgetFn`` contracts used by this adapter, so
+    external code can persist or query the canonical engine without
+    writing glue by hand.
+
+    No I/O, no async, no caching — the engine's own semantics are
+    preserved verbatim.
+    """
+    def _remember(category, key, value, **kwargs):
+        return engine.remember(category, key, value, **kwargs)
+
+    def _recall(*, query=None, category=None, project=None,
+                memory_type=None, limit=25):
+        return engine.recall(
+            query=query,
+            category=category,
+            project=project,
+            memory_type=memory_type,
+            limit=limit,
+        )
+
+    def _forget(*, key=None, category=None, project=None):
+        return engine.forget(key=key, category=category, project=project)
+
+    return _remember, _recall, _forget
+
+
 def persist_to_memory_engine(
     remember_fn: RememberFn,
     category: str,
