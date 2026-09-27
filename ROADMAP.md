@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.26 complete** · Active milestone: **none** · Next discovered: **none — STOP recorded below (discovery after v8.26)**
-> Verified suite at checkpoint: **1842 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.27 complete** · Active milestone: **none** · Next discovered: **none — STOP recorded below (discovery after v8.27)**
+> Verified suite at checkpoint: **1879 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -34,6 +34,7 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.24 projection-run writeback | ✅ Complete |
 | v8.25 goal/plan lifecycle reflection | ✅ Complete |
 | v8.26 step lifecycle reflection | ✅ Complete |
+| v8.27 execution failure writeback | ✅ Complete |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -177,6 +178,30 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   `_run_projected_pipeline` call-set pin (+3 `reflect_step_*`), and the
   v8.25 goal/plan/run ordering traces (step writes now recorded explicitly).
   Verified: 41 new focused, full suite 1842.
+- v8.27 Execution Failure Writeback — additive private
+  `Agent._record_failure_outcome` and one `try/except BaseException`
+  around the run in `execute_projection_with_lifecycle` (the only caller).
+  **Contract** (owner decision after the v8.26 audit: retry/resume NO,
+  failure writeback YES): exactly one structured writeback per failed
+  execution attempt through the existing Memory → Reflection → Learning
+  APIs — `record_outcome(cause="controlled_tool_dispatch_failure",
+  outcome="failed:<ExceptionType>")`, `add_reflection(what_failed=...,
+  confidence_level=0.0)`, `record_failed_pattern` — with metadata
+  `{run_id, goal_id, plan_id, task_id, project, exception_type}`. It is an
+  *execution* failure only if the projection's `PipelineRun` is FAILED
+  (projection, lifecycle-start and pre-RUNNING failures write nothing); the
+  failed stage is the single ACTIVE step (fallback: goal, `task_id=None`).
+  Only the exception **type name** is stored — never its message, repr,
+  args or traceback. Writeback exceptions (`Exception`) are suppressed so
+  the original exception always propagates unchanged (writes are
+  non-atomic). No status transition, no success record for stages
+  completed before the failure, v8.22–v8.24 unchanged (still write nothing
+  on failure), no retry/resume, no new statuses, no new module. Sanctioned
+  test updates (owner decision): v8.25 `test_failure_no_writeback` →
+  `test_failure_no_success_writeback`; `test_method_is_thin_glue` now pins
+  exactly one BaseException handler (bare re-raise, calls only
+  `_record_failure_outcome`) around `_run_projected_pipeline` only.
+  Verified: 37 new focused, full suite 1879.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -185,15 +210,14 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.26 — Step Lifecycle Reflection: COMPLETE.**
+**v8.27 — Execution Failure Writeback: COMPLETE.**
 
-- Full suite: 1842 passed, 0 failed, 0 errors, 0 skipped.
-- Frozen legacy modules: zero diff; `core/planning_engine.py`,
-  `core/goal_manager.py`, `core/pipeline_run.py`,
-  `core/lifecycle_reflection.py` and every other v8.x module unchanged
-  (only `core/agent/__init__.py` and the new leaf module).
-- The Foundation-native vertical now reflects each execution attempt at
-  goal, plan, step and run granularity.
+- Full suite: 1879 passed, 0 failed, 0 errors, 0 skipped.
+- Frozen legacy modules: zero diff; every v8.x store, leaf and tool module,
+  `core/problem_solver.py`, `core/memory_engine.py` and the reflection /
+  learning managers unchanged (only `core/agent/__init__.py`).
+- The Foundation-native lifecycle path now writes back both successful and
+  failed execution attempts; retry / resume remain out of scope.
 
 ---
 
@@ -500,7 +524,7 @@ the frozen `core/execution_orchestrator.py`) remains a separate vocabulary
 and is neither imported nor mirrored (Architecture Policy: no coupling of
 the two runtimes).
 
-### Discovery after v8.26 — no defensible milestone; STOP (protocol §13)
+### Discovery after v8.26 — STOP (protocol §13); resolved by the project owner → v8.27 (record kept)
 
 Candidates examined against §25.1 (v8.26 adds step granularity but opens no
 new evidence-backed gap):
@@ -528,6 +552,44 @@ milestone: *(a) Should a failed lifecycle attempt be retryable/resumable
 from its ACTIVE step (authorizing §14/§15 retry scope)? (b) Should failed
 attempts be written back to memory/reflection/learning, and in what
 shape?*
+
+_Note: "§14/§15" in the retry references above means
+`docs/TECHNICAL_DEBT.md` §14 (Retry policy) / §15 (Fallback policy), both
+scoped to `AIService`; `AUTONOMOUS_BUILD_PROTOCOL.md` §14 separately
+forbids "retries before retry architecture"._
+
+_Resolution (project owner, after a read-only decision audit, before
+v8.27): (a) retry/resume — **NO for now** (future architecture decision;
+no retry, resume, re-execution API, attempt counter, retry policy or
+idempotency metadata). (b) failure writeback — **YES**: one structured
+writeback per failed execution attempt through the existing
+Memory → Reflection → Learning layering; no raw exception text; original
+exception wins; execution state authoritative; projection failures are
+not execution failures. Implemented as v8.27 (see history above)._
+
+### Discovery after v8.27 — no defensible milestone; STOP (protocol §13)
+
+Candidates examined against §25.1:
+
+- **Retry / resume** — explicitly deferred by the owner (decision (a)
+  above); requires a future architecture decision.
+- **Consulting failure memory before projection execution**
+  (`gather_context`): the v8.18 tool chain deliberately dropped that read
+  because "its result was always discarded"; the projection path has no
+  consumer for the context — speculative.
+- **Failure writeback on v8.20 / v8.24 paths**: the owner decision scoped
+  failure writeback to the lifecycle path; extending it would contradict
+  those milestones' pinned "no writes on failure" contracts — product
+  decision.
+- Producers for unassigned status values, readiness evaluation over
+  `depends_on`, structured tool arguments, tool schemas / provider
+  tool-calling (§9, v9.x), `main.py` migration (frozen) — rejected for the
+  reasons recorded after v8.24 / v8.26.
+
+**Open decision for the project owner:** *authorize the next capability
+area (e.g. retry/resume architecture, or a consumer for recorded failure
+memory on the Foundation path) — none is derivable from repository
+evidence alone.*
 
 ---
 

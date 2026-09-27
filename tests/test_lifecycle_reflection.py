@@ -315,11 +315,16 @@ class TestFailurePath:
                             ("steps", (P.ACTIVE,)),  # v8.26: failing step stays ACTIVE
                             ("run", R.FAILED)]
 
-    def test_failure_no_writeback(self, stub_remember: list) -> None:
+    def test_failure_no_success_writeback(self, stub_remember: list) -> None:
+        # v8.27 (owner decision): a failed attempt writes exactly one
+        # structured *failure* record per layer and still no success record.
         a = agent_with(StaticMockTool(name="step one"), Failing("step two", ToolError("tool failed")))
         with pytest.raises(ToolError, match="tool failed"):
             a.execute_projection_with_lifecycle("step one then step two")
-        assert stub_remember == [] and a.reflection_engine.count() == 0 and a.learning.get_all() == []
+        assert len(stub_remember) == 1 and stub_remember[0][0][2].startswith("FAILED |")
+        assert a.reflection_engine.count() == 1
+        (rec,) = a.learning.get_all()
+        assert rec.category == "failed_pattern"
 
     def test_failure_not_converted_to_goal_failure(self) -> None:
         a = agent_with(Failing("fix the wifi", KeyError("k")))
@@ -396,11 +401,21 @@ class TestArchitecture:
         calls = {c.func.id if isinstance(c.func, ast.Name) else getattr(c.func, "attr", None)
                  for c in ast.walk(node) if isinstance(c, ast.Call)}
         assert calls == {"project_request", "reflect_execution_started", "_run_projected_pipeline",
-                         "reflect_execution_completed", "_record_tool_outcomes"}
+                         "reflect_execution_completed", "_record_tool_outcomes",
+                         "_record_failure_outcome"}  # v8.27
         attrs = {a.attr for a in ast.walk(node) if isinstance(a, ast.Attribute)}
         assert not attrs & {"update_goal", "update_plan", "update_run", "route", "_tool_router"}
-        for n in ast.walk(node):
-            assert not isinstance(n, (ast.Try, ast.ExceptHandler))
+        # v8.27: exactly one handler — around the run only — that performs the
+        # failure writeback and re-raises the original exception unchanged.
+        (h,) = [n for n in ast.walk(node) if isinstance(n, ast.ExceptHandler)]
+        assert isinstance(h.type, ast.Name) and h.type.id == "BaseException"
+        raises = [n for n in ast.walk(h) if isinstance(n, ast.Raise)]
+        assert len(raises) == 1 and raises[0].exc is None
+        hcalls = {getattr(c.func, "attr", None) for c in ast.walk(h) if isinstance(c, ast.Call)}
+        assert hcalls == {"_record_failure_outcome"}
+        (t,) = [n for n in ast.walk(node) if isinstance(n, ast.Try)]
+        tcalls = {getattr(c.func, "attr", None) for s in t.body for c in ast.walk(s) if isinstance(c, ast.Call)}
+        assert tcalls == {"_run_projected_pipeline"} and not t.finalbody and not t.orelse
 
     def test_shared_helpers_used_by_v8_23_and_v8_24(self) -> None:
         for name, helper in (("execute_projection_with_run_status", "_run_projected_pipeline"),
