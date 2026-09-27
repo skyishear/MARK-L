@@ -85,7 +85,10 @@ class Trace:
             return og(goal_id, **k)
 
         def p(plan_id, **k):
-            self.events.append(("plan", k.get("status")))
+            if "steps" in k:  # v8.26 step reflection (whole-tuple replacement)
+                self.events.append(("steps", tuple(s.status for s in k["steps"])))
+            else:
+                self.events.append(("plan", k.get("status")))
             return op(plan_id, **k)
 
         def r(run_id, **k):
@@ -223,7 +226,9 @@ class TestSuccessPath:
         a.execute_projection_with_lifecycle("fix the wifi")
         assert t.events == [
             ("goal", G.ACTIVE), ("plan", P.ACTIVE),
-            ("run", R.RUNNING), ("run", R.COMPLETED),
+            ("run", R.RUNNING),
+            ("steps", (P.ACTIVE,)), ("steps", (P.COMPLETED,)),  # v8.26
+            ("run", R.COMPLETED),
             ("plan", P.COMPLETED), ("goal", G.COMPLETED),
         ]
 
@@ -306,7 +311,9 @@ class TestFailurePath:
         t = Trace(a, monkeypatch)
         with pytest.raises(RuntimeError):
             a.execute_projection_with_lifecycle("fix the wifi")
-        assert t.events == [("goal", G.ACTIVE), ("plan", P.ACTIVE), ("run", R.RUNNING), ("run", R.FAILED)]
+        assert t.events == [("goal", G.ACTIVE), ("plan", P.ACTIVE), ("run", R.RUNNING),
+                            ("steps", (P.ACTIVE,)),  # v8.26: failing step stays ACTIVE
+                            ("run", R.FAILED)]
 
     def test_failure_no_writeback(self, stub_remember: list) -> None:
         a = agent_with(StaticMockTool(name="step one"), Failing("step two", ToolError("tool failed")))

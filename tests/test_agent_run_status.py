@@ -264,7 +264,10 @@ class TestArchitecture:
                   for c in ast.walk(helper) if isinstance(c, ast.Call)}
         assert hcalls == {"get_pipeline", "KeyError", "create_run",
                           "build_stage_dispatch_decisions", "update_run", "ToolRequest",
-                          "route", "append", "tuple"}
+                          "route", "append", "tuple",
+                          # v8.26: step reflection, gated by ``reflect_steps``
+                          "reflect_step_reached", "reflect_step_completed",
+                          "reflect_step_skipped"}
         names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)} | {
             n.id for n in ast.walk(helper) if isinstance(n, ast.Name)}
         for forbidden in ("skill_dispatch", "is_registered", "build_dispatch_decision",

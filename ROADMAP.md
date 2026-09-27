@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.25 complete** · Active milestone: **none** · Next discovered: **none — open decision recorded below**
-> Verified suite at checkpoint: **1801 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.26 complete** · Active milestone: **none** · Next discovered: **none — STOP recorded below (discovery after v8.26)**
+> Verified suite at checkpoint: **1842 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -33,6 +33,7 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.23 pipeline run status recording | ✅ Complete |
 | v8.24 projection-run writeback | ✅ Complete |
 | v8.25 goal/plan lifecycle reflection | ✅ Complete |
+| v8.26 step lifecycle reflection | ✅ Complete |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -160,6 +161,22 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   moved into private helpers `_run_projected_pipeline` / `_record_tool_outcomes`
   shared by v8.23, v8.24 and v8.25 (structural guards retargeted; semantics
   unchanged). Verified: 38 focused, full suite 1801.
+- v8.26 Step Lifecycle Reflection — new leaf `core/step_lifecycle.py`
+  (`reflect_step_reached` / `reflect_step_completed` / `reflect_step_skipped`;
+  `PlanningEngine.get_plan` + whole-tuple `update_plan(steps=...)` only,
+  steps targeted by `plan_id` + `Step.id`) and an opt-in keyword
+  `reflect_steps=False` on the shared `_run_projected_pipeline`, set only by
+  `execute_projection_with_lifecycle`. Implements the recorded Step.status
+  contract: reached dispatched stage ACTIVE → COMPLETED on success; reached
+  skipped stage DRAFT → ARCHIVED; failing step stays ACTIVE; unreached steps
+  stay DRAFT (6a); v8.22–v8.24 leave steps DRAFT. No new status type or
+  values, no store transition machine, no `TaskState`, no re-execution
+  handling; Goal/Plan/run semantics, exception propagation and v8.24
+  writeback unchanged. Sanctioned structural pin updates: the Agent import
+  allowlists (+`core.step_lifecycle`, as v8.25 did for its leaf), the
+  `_run_projected_pipeline` call-set pin (+3 `reflect_step_*`), and the
+  v8.25 goal/plan/run ordering traces (step writes now recorded explicitly).
+  Verified: 41 new focused, full suite 1842.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -168,14 +185,15 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.25 — Goal/Plan Lifecycle Reflection: COMPLETE.**
+**v8.26 — Step Lifecycle Reflection: COMPLETE.**
 
-- Full suite: 1801 passed, 0 failed, 0 errors, 0 skipped.
-- Frozen legacy modules: zero diff; `core/goal_manager.py`,
-  `core/planning_engine.py`, `core/pipeline_run.py` and every other v8.x
-  module unchanged (only `core/agent/__init__.py` and the new leaf module).
-- The Foundation-native vertical now covers goal → projection → stage
-  dispatch → run status → lifecycle reflection → writeback.
+- Full suite: 1842 passed, 0 failed, 0 errors, 0 skipped.
+- Frozen legacy modules: zero diff; `core/planning_engine.py`,
+  `core/goal_manager.py`, `core/pipeline_run.py`,
+  `core/lifecycle_reflection.py` and every other v8.x module unchanged
+  (only `core/agent/__init__.py` and the new leaf module).
+- The Foundation-native vertical now reflects each execution attempt at
+  goal, plan, step and run granularity.
 
 ---
 
@@ -188,6 +206,58 @@ None.
 _(Filled by architecture-driven discovery, `AUTONOMOUS_BUILD_PROTOCOL.md`
 §25. Recorded as NOT STARTED with objective, justification, prerequisites,
 exclusions and verification before implementation begins.)_
+
+### v8.26 — Step Lifecycle Reflection — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+**Objective.** Reflect per-stage outcomes onto the projected Foundation
+`Step.status` on the `Agent.execute_projection_with_lifecycle` path only,
+exactly as fixed by the recorded Step.status contract (see "Discovery after
+v8.25" below): reached step → ACTIVE, dispatched success → COMPLETED,
+skipped (unregistered tool) → ARCHIVED directly from DRAFT, failing step
+stays ACTIVE, steps never reached stay DRAFT.
+
+**Architectural justification.** v8.25 reflects the execution attempt onto
+Goal/Plan, but projected `Step`s stay DRAFT forever — the Foundation plan
+is the only lifecycle-bearing record on the projection path that never
+reflects execution. The blocking decision recorded after v8.25 is now
+resolved by the project owner, and every prerequisite exists; the work is
+additive glue on the lifecycle path through existing store APIs.
+
+**Prerequisites (all present).** `Step.status: PlanStatus`
+(`core/planning_engine.py`); `PlanningEngine.get_plan` /
+`update_plan(plan_id, steps=...)` (whole-tuple replacement of frozen
+`Step`s; status-only `update_plan` preserves steps); traceability
+`Step.id == Task.id == Node.metadata["task_id"] == ToolDispatchDecision.task_id`
+(v8.21 / v8.22), unique within a plan (`core/planner.py` rejects duplicate
+task ids); `Agent.execute_projection_with_lifecycle` and
+`_run_projected_pipeline` (v8.25).
+
+**Boundary.** Steps are targeted by `projection.plan_id` + `Step.id` /
+`decision.task_id`, never by position (stage order is
+`plan.execution_order()`, `Step.index` is `plan.tasks` order). Existing
+Goal / Plan / PipelineRun semantics, the re-raised exception and the v8.24
+writeback are unchanged.
+
+**Exclusions.** No new `StepStatus` type; no new `PlanStatus` values; no
+transition machine inside `PlanningEngine`; no legacy `TaskState` coupling;
+no change to v8.22 / v8.23 / v8.24 `Step.status` behaviour (steps stay
+DRAFT there); no writeback redesign; no new per-stage execution engine; no
+re-execution / idempotency implementation.
+
+**Verification.** Focused tests per contract rule: projection DRAFT;
+success → every dispatched step COMPLETED; skipped → ARCHIVED and never
+observed ACTIVE; all-skipped run → Plan/Goal COMPLETED with all steps
+ARCHIVED; failure → earlier steps COMPLETED/ARCHIVED, failing step ACTIVE,
+later steps DRAFT (including unregistered ones — rule 6a), run FAILED,
+Goal/Plan ACTIVE, original exception re-raised, no writeback; step
+targeting correct when stage order differs from `Step.index`; v8.22 /
+v8.23 / v8.24 leave all steps DRAFT; `PlanStatus` / `GoalStatus` /
+`PipelineRunStatus` vocabularies and `ALLOWED_TRANSITIONS` unchanged;
+frozen modules zero diff. Existing structural pins that the change
+necessarily touches (e.g. `test_method_is_thin_glue`, and the
+`lifecycle_reflection.py` AST pins if that module is extended) may only
+receive sanctioned minimal updates, listed in the checkpoint report. Full
+suite, `git diff --check`.
 
 ### v8.22 — Pipeline-Stage Tool Dispatch — **COMPLETE** (moved to history above; kept here as the discovery record)
 
@@ -357,7 +427,7 @@ _Resolution (project owner, before v8.25): Goal/Plan describe intent, a run
 describes one attempt — start → ACTIVE/ACTIVE; run COMPLETED →
 COMPLETED/COMPLETED; run FAILED → both remain ACTIVE; no new values._
 
-### Discovery after v8.25 — no defensible milestone; STOP (protocol §13)
+### Discovery after v8.25 — STOP (protocol §13); resolved by the project owner → v8.26 (record kept)
 
 Candidates examined against §25.1:
 
@@ -382,6 +452,82 @@ Candidates examined against §25.1:
 onto `Step.status`, and if so: dispatched-and-succeeded → COMPLETED? skipped →
 (unchanged DRAFT | COMPLETED | ARCHIVED)? steps after a failing stage →
 (unchanged | ACTIVE)? the failing step itself → (ACTIVE | unchanged)?*
+
+_Resolution (project owner, after a read-only audit and contract
+validation, before v8.26) — **Step.status lifecycle contract**:_
+
+1. Newly projected Step → DRAFT.
+2. On the lifecycle execution path, when execution reaches a step/stage →
+   ACTIVE.
+3. Dispatched stage succeeds → COMPLETED.
+4. A skipped stage whose tool is unavailable/unregistered → ARCHIVED.
+5. A stage/tool execution failure leaves that step → ACTIVE.
+6. Steps after a failure that were never reached remain → DRAFT.
+7. A step already COMPLETED is never downgraded — an **invariant only**; no
+   re-execution state machine or idempotency mechanism is introduced (every
+   execution re-projects into fresh DRAFT steps today).
+8. Foundation `Step.status` uses only the existing `PlanStatus` vocabulary.
+
+_Mandatory clarifications:_
+
+- **2a.** Step status transitions occur **only** on the
+  `execute_projection_with_lifecycle` path; the v8.22, v8.23 and v8.24
+  methods remain behaviourally unchanged with respect to `Step.status`.
+- **4a.** A skipped stage goes directly DRAFT → ARCHIVED; it never passes
+  through ACTIVE because it was never executed.
+- **6a.** Rule 6 overrides rule 4: a stage never reached because an earlier
+  stage failed remains DRAFT, even if its tool is unregistered.
+
+_Semantics:_
+
+- Step ARCHIVED means **"skipped, not executed, no success implied"** — the
+  first meaning assigned to ARCHIVED (at step level only; Plan-level
+  ARCHIVED remains unassigned).
+- A Plan may therefore become COMPLETED while some or all of its steps are
+  ARCHIVED (an all-skipped run already completes, v8.23/v8.25).
+- A failing step remains ACTIVE because the architecture already represents
+  unfinished intent at Goal/Plan level as ACTIVE when an attempt fails
+  (v8.25).
+- A step that completed before a later stage failed may remain COMPLETED
+  while the `PipelineRun` is FAILED and the Plan/Goal remain ACTIVE.
+
+_No new status values_ (no FAILED / SKIPPED): the failure and skip
+outcomes are already expressible with existing values and recorded
+authoritatively at run level (`PipelineRunStatus.FAILED`); adding values
+would change the completed v8.4 data model, which v8.25 deliberately
+avoided. _Legacy `TaskState`_ (PENDING/RUNNING/COMPLETED/FAILED/SKIPPED, in
+the frozen `core/execution_orchestrator.py`) remains a separate vocabulary
+and is neither imported nor mirrored (Architecture Policy: no coupling of
+the two runtimes).
+
+### Discovery after v8.26 — no defensible milestone; STOP (protocol §13)
+
+Candidates examined against §25.1 (v8.26 adds step granularity but opens no
+new evidence-backed gap):
+
+- **Retry / resume from the ACTIVE (failed) step.** v8.26 makes the failing
+  step identifiable, but retry/fallback is explicitly forbidden until
+  authorized (§14/§15) and rule 7 excludes re-execution handling —
+  requires owner authorization (§13 *External decision*).
+- **Failure writeback** (recording FAILED attempts or partially COMPLETED
+  steps to memory): every chain deliberately writes nothing on failure —
+  product decision, unchanged since the v8.25 discovery.
+- **Producers for the remaining unassigned values** (`PlanStatus.READY`,
+  Plan-level `ARCHIVED`, `GoalStatus.PAUSED` / `CANCELLED`,
+  `PipelineRunStatus.CANCELLED`): no signal, initiator or consumer exists —
+  speculative.
+- **Readiness evaluation over `PipelineStage.depends_on`**: descriptive only
+  (v8.8); stage order is fixed at projection time and nothing consumes
+  readiness — speculative.
+- Structured tool arguments, tool schemas / provider tool-calling (§9,
+  v9.x), `main.py` migration (frozen) — rejected for the reasons recorded
+  after v8.24.
+
+**Open decisions for the project owner** — any one unblocks the next
+milestone: *(a) Should a failed lifecycle attempt be retryable/resumable
+from its ACTIVE step (authorizing §14/§15 retry scope)? (b) Should failed
+attempts be written back to memory/reflection/learning, and in what
+shape?*
 
 ---
 

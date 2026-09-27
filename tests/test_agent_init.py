@@ -512,6 +512,7 @@ class TestNoForbiddenIntegration:
             "core.plan_projection",
             "core.stage_dispatch",
             "core.lifecycle_reflection",
+            "core.step_lifecycle",
             "datetime",
             "types",
             "typing",

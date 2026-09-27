@@ -328,7 +328,8 @@ class TestImportArchitecture:
         v8_21_modules = {"core.plan_projection"}  # legacy plan -> Foundation projection
         v8_22_modules = {"core.stage_dispatch"}  # pipeline-stage tool dispatch
         v8_25_modules = {"core.lifecycle_reflection"}  # goal/plan lifecycle reflection
-        assert core_imports == allowed_legacy | V8_MODULES | v8_15_modules | v8_16_modules | v8_17_modules | v8_21_modules | v8_22_modules | v8_25_modules
+        v8_26_modules = {"core.step_lifecycle"}  # step lifecycle reflection
+        assert core_imports == allowed_legacy | V8_MODULES | v8_15_modules | v8_16_modules | v8_17_modules | v8_21_modules | v8_22_modules | v8_25_modules | v8_26_modules
 
     def test_foundation_planning_engine_is_aliased(self) -> None:
         aliases = {

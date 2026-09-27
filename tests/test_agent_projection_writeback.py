@@ -242,7 +242,7 @@ class TestArchitecture:
             tree = ast.parse(f.read())
         modules = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
         assert "core.stage_dispatch" in modules and "core.plan_projection" in modules
-        assert len([m for m in modules if m.startswith("core.")]) == 35  # v8.24: 34; v8.25 added core.lifecycle_reflection
+        assert len([m for m in modules if m.startswith("core.")]) == 36  # v8.24: 34; v8.25 added core.lifecycle_reflection; v8.26 core.step_lifecycle
 
     def test_all_unchanged(self) -> None:
         assert len(agent_module.__all__) == 16

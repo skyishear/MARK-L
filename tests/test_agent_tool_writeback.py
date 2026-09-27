@@ -435,6 +435,7 @@ class TestArchitecture:
             "core.pipeline_engine", "core.pipeline_run", "core.planning_engine",
             "core.task_graph", "core.tool_dispatch", "core.tool_interface",
             "core.plan_projection", "core.stage_dispatch", "core.lifecycle_reflection",
+            "core.step_lifecycle",
             "core.tool_registry", "core.tool_router",
         }
 

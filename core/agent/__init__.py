@@ -46,6 +46,7 @@ from core.pipeline_engine import PipelineEngine
 from core.pipeline_run import PipelineRun, PipelineRunManager, PipelineRunStatus
 from core.plan_projection import PlanProjection, project_execution_plan
 from core.stage_dispatch import build_stage_dispatch_decisions
+from core.step_lifecycle import reflect_step_completed, reflect_step_reached, reflect_step_skipped
 from core.planning_engine import PlanningEngine as FoundationPlanningEngine
 from core.task_graph import TaskGraph
 # v8.11–v8.14 tool stack (v8.15 bridge): composition only, no dispatch path.
@@ -997,11 +998,20 @@ class Agent:
         projection: PlanProjection,
         *,
         project: str | None,
+        reflect_steps: bool = False,
     ) -> tuple[PipelineRun, tuple[ToolDispatchDecision, ...], tuple[ToolResult, ...]]:
         """v8.23 run body (extracted unchanged in v8.25 so the lifecycle-aware
         path can reuse it): ``create_run`` (CREATED) -> stage decisions ->
         RUNNING -> route each dispatched stage -> COMPLETED, or FAILED with
-        the same exception re-raised unchanged."""
+        the same exception re-raised unchanged.
+
+        ``reflect_steps`` (v8.26, set only by the lifecycle path) reflects
+        each *reached* stage onto its Foundation step, targeted by
+        ``projection.plan_id`` + ``decision.task_id``: dispatched -> ACTIVE
+        before routing, COMPLETED after success; skipped -> ARCHIVED. On a
+        failure nothing more is written (the failing step stays ACTIVE,
+        unreached steps stay DRAFT). Off by default, so v8.23 / v8.24 leave
+        steps untouched."""
         pipeline = self._pipeline_engine.get_pipeline(projection.pipeline_id)
         if pipeline is None:
             raise KeyError(projection.pipeline_id)
@@ -1021,14 +1031,22 @@ class Agent:
         )
         self._pipeline_run_manager.update_run(run.id, status=PipelineRunStatus.RUNNING)
         results: list[ToolResult] = []
+        plan_id = projection.plan_id
+        engine = self._planning_engine
         try:
             for decision in decisions:
                 if decision.would_dispatch:
+                    if reflect_steps:
+                        reflect_step_reached(plan_id, decision.task_id, planning_engine=engine)
                     request = ToolRequest(
                         tool_name=decision.tool_name,
                         arguments={"problem": decision.tool_name},
                     )
                     results.append(self._tool_router.route(request))
+                    if reflect_steps:
+                        reflect_step_completed(plan_id, decision.task_id, planning_engine=engine)
+                elif reflect_steps:
+                    reflect_step_skipped(plan_id, decision.task_id, planning_engine=engine)
         except BaseException:
             # Record the failure, then propagate the original exception.
             self._pipeline_run_manager.update_run(run.id, status=PipelineRunStatus.FAILED)
@@ -1131,6 +1149,10 @@ class Agent:
         the v8.23/v8.24 methods' "no Goal/Plan transition" behaviour is
         pinned by their tests; they share this method's body through the
         private helpers. Returns the v8.23/v8.24 4-tuple.
+
+        v8.26: the only path that reflects stage outcomes onto
+        ``Step.status`` (``reflect_steps=True``; see
+        ``_run_projected_pipeline`` and ``core.step_lifecycle``).
         """
         _plan, projection = self.project_request(goal)
         reflect_execution_started(
@@ -1139,7 +1161,9 @@ class Agent:
             goal_manager=self._goal_manager,
             planning_engine=self._planning_engine,
         )
-        run, decisions, results = self._run_projected_pipeline(projection, project=project)
+        run, decisions, results = self._run_projected_pipeline(
+            projection, project=project, reflect_steps=True
+        )
         reflect_execution_completed(
             projection.goal_id,
             projection.plan_id,
