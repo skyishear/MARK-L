@@ -299,6 +299,7 @@ class TestBehaviouralFreeze:
                 "_run_projected_pipeline",  # v8.25 helper shared by v8.23/v8.25
                 "_run_tool_dispatch_chain",  # v8.29 helper shared by v8.19/v8.20
                 "_prepare_resume",  # v8.32 resume validation: rebuilds decisions (no routing)
+                "_route_with_transient_retry",  # v8.33 bounded retry around ToolRouter.route
             ):
                 for sub in ast.walk(node):
                     if isinstance(sub, ast.Attribute):

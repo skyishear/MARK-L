@@ -444,4 +444,6 @@ class TestUnchanged:
 
     def test_public_api(self) -> None:
         assert len(agent_module.__all__) == 16
-        assert "resume_failed_run" in dir(Agent) and not any("retry" in n.lower() for n in dir(Agent))
+        # v8.33: the bounded in-run retry helper is the only retry surface.
+        assert "resume_failed_run" in dir(Agent)
+        assert [n for n in dir(Agent) if "retry" in n.lower()] == ["_route_with_transient_retry"]

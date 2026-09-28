@@ -353,7 +353,7 @@ class TestUnchanged:
             a.execute_request_with_tool_dispatch_writeback("fix the wifi")
         assert tool.calls == 1
         for name in dir(Agent):
-            if name in {"resume_failed_run", "_prepare_resume"}:  # v8.32 sanctioned resume (owner-authorized)
+            if name in {"resume_failed_run", "_prepare_resume", "_route_with_transient_retry"}:  # v8.32 / v8.33 sanctioned
                 continue
             assert not any(w in name.lower() for w in ("retry", "resume", "attempt")), name
 

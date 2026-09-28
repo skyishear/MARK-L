@@ -198,14 +198,15 @@ class TestExecutionRules:
     def test_generic_exceptions_are_unknown_never_transient(self, exc: BaseException) -> None:
         assert classify(exc) is C.UNKNOWN
 
-    def test_nothing_in_the_repository_maps_to_transient(self) -> None:
-        # No repository exception is documented as transient (limitation,
-        # recorded in ROADMAP): every known execution exception is checked.
+    def test_only_the_explicit_signal_maps_to_transient(self) -> None:
+        # v8.33: ``TransientToolError`` is the one TRANSIENT class; every other
+        # known execution exception (incl. timeout-looking built-ins) is not.
+        from core.tool_interface import TransientToolError
+
+        assert classify(TransientToolError(SECRET)) is C.TRANSIENT
         known = [ToolNotFoundError(), InvalidGoalError(), PlanValidationError(), ToolError(),
-                 ValueError(), TypeError(), KeyError(), RuntimeError(), TimeoutError()]
+                 ValueError(), TypeError(), KeyError(), RuntimeError(), TimeoutError(), ConnectionError()]
         assert C.TRANSIENT not in {classify(e) for e in known}
-        src = open(AGENT_FILE, encoding="utf-8").read()
-        assert "FailureCategory.TRANSIENT" not in src
 
 
 AGENT_FILE = os.path.join(CORE_DIR, "agent", "__init__.py")
@@ -215,12 +216,13 @@ AGENT_FILE = os.path.join(CORE_DIR, "agent", "__init__.py")
 
 
 class TestNoBehaviourChange:
-    def test_execution_paths_never_classify(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_non_lifecycle_paths_never_classify(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # v8.33: only the lifecycle path (and resume) consumes the classifier,
+        # for bounded retry; every other path is unchanged.
         calls: list[object] = []
         monkeypatch.setattr(agent_module, "_classify_execution_failure", lambda e: calls.append(e) or C.UNKNOWN)
         for method in ("execute_request_with_tool_dispatch_writeback", "execute_projection_with_writeback",
-                       "execute_projection_with_lifecycle", "execute_projection_with_run_status",
-                       "execute_projection_with_tool_dispatch"):
+                       "execute_projection_with_run_status", "execute_projection_with_tool_dispatch"):
             a = Agent()
             a.tool_registry.register(Failing("fix the wifi", ToolError("x")))
             with pytest.raises(ToolError):
@@ -242,7 +244,7 @@ class TestNoBehaviourChange:
     def test_no_retry_or_resume_surface(self) -> None:
         for name in dir(Agent):
             low = name.lower()
-            if name in {"resume_failed_run", "_prepare_resume"}:  # v8.32 sanctioned resume (owner-authorized)
+            if name in {"resume_failed_run", "_prepare_resume", "_route_with_transient_retry"}:  # v8.32 / v8.33 sanctioned
                 continue
             assert not any(w in low for w in ("retry", "resume", "attempt", "backoff")), name
         assert not hasattr(ToolRouter, "retry") and not hasattr(ToolRouter, "classify")

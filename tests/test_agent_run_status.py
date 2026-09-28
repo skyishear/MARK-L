@@ -267,7 +267,9 @@ class TestArchitecture:
                           "route", "append", "tuple",
                           # v8.26: step reflection, gated by ``reflect_steps``
                           "reflect_step_reached", "reflect_step_completed",
-                          "reflect_step_skipped"}
+                          "reflect_step_skipped",
+                          # v8.33: bounded in-run retry, gated by ``retry_transient``
+                          "_route_with_transient_retry"}
         names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)} | {
             n.id for n in ast.walk(helper) if isinstance(n, ast.Name)}
         for forbidden in ("skill_dispatch", "is_registered", "build_dispatch_decision",

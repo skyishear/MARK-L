@@ -71,6 +71,15 @@ class ToolError(Exception):
     """Raised by a tool implementation when an invocation fails."""
 
 
+class TransientToolError(ToolError):
+    """A ``ToolError`` the tool itself declares potentially temporary (v8.33).
+
+    The explicit, type-based transient signal: the Agent's execution failure
+    rules classify it TRANSIENT, and the lifecycle path may re-invoke the
+    tool (bounded by owner policy O5). The class carries no behaviour.
+    """
+
+
 class ToolInterface(Protocol):
     """Minimal tool interface.
 
@@ -136,4 +145,5 @@ __all__ = [
     "ToolInterface",
     "ToolRequest",
     "ToolResult",
+    "TransientToolError",
 ]

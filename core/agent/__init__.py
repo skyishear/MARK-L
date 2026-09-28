@@ -53,7 +53,7 @@ from core.planning_engine import PlanStatus, PlanningEngine as FoundationPlannin
 from core.task_graph import TaskGraph
 # v8.11–v8.14 tool stack (v8.15 bridge): composition only, no dispatch path.
 from core.tool_dispatch import ToolDispatchDecision, build_tool_dispatch_decision
-from core.tool_interface import ToolRequest, ToolResult
+from core.tool_interface import ToolRequest, ToolResult, TransientToolError
 from core.tool_registry import ToolRegistry
 from core.tool_catalog import ToolCatalog
 from core.tool_router import ToolNotFoundError, ToolRouter
@@ -85,14 +85,17 @@ def _classify_execution_failure(exc: BaseException) -> FailureCategory:
     composes the planner and the tool router) and built per call, so the
     module holds no state. Only exception types whose documented meaning
     supports a category are listed; everything else — including
-    ``ToolError`` and generic Python exceptions — is UNKNOWN. No repository
-    exception is documented as transient, so nothing maps to TRANSIENT.
-    Classification never triggers retry or changes any behaviour.
+    ``ToolError`` and generic Python exceptions — is UNKNOWN. The only
+    TRANSIENT class is ``TransientToolError`` (v8.33), the tool's explicit
+    signal; UNKNOWN is never treated as transient.
+    Classification itself changes nothing; its only consumer is the v8.33
+    bounded in-run retry (``_route_with_transient_retry``).
     """
     rules: dict[type, FailureCategory] = {
         ToolNotFoundError: FailureCategory.PERMANENT,  # "tool_name is not registered"
         InvalidGoalError: FailureCategory.INVALID_INPUT,  # "goal cannot be planned"
         PlanValidationError: FailureCategory.INVALID_INPUT,  # "task graph is invalid"
+        TransientToolError: FailureCategory.TRANSIENT,  # v8.33: tool-declared temporary
     }
     return classify_failure(exc, rules)
 
@@ -1078,6 +1081,7 @@ class Agent:
         dispatched: list[ToolDispatchDecision] | None = None,
         skip_task_ids: frozenset[str] | None = None,
         resumes_run_id: str | None = None,
+        retry_transient: bool = False,
     ) -> tuple[PipelineRun, tuple[ToolDispatchDecision, ...], tuple[ToolResult, ...]]:
         """v8.23 run body (extracted unchanged in v8.25 so the lifecycle-aware
         path can reuse it): ``create_run`` (CREATED) -> stage decisions ->
@@ -1100,7 +1104,12 @@ class Agent:
         ``resume_failed_run``): stages whose task id is in ``skip_task_ids``
         (steps already COMPLETED or ARCHIVED) are left out of this run —
         not dispatched, not reflected, not returned — and the new run's
-        metadata records ``"resumes_run_id"``. Defaults change nothing."""
+        metadata records ``"resumes_run_id"``. Defaults change nothing.
+
+        ``retry_transient`` (v8.33, set only by the lifecycle path and
+        ``resume_failed_run``) routes each dispatched stage through
+        ``_route_with_transient_retry`` (bounded in-run retry, owner policy
+        O5); off by default, so every other path routes exactly once."""
         pipeline = self._pipeline_engine.get_pipeline(projection.pipeline_id)
         if pipeline is None:
             raise KeyError(projection.pipeline_id)
@@ -1135,7 +1144,10 @@ class Agent:
                         tool_name=decision.tool_name,
                         arguments={"problem": decision.tool_name},
                     )
-                    results.append(self._tool_router.route(request))
+                    if retry_transient:
+                        results.append(self._route_with_transient_retry(request))
+                    else:
+                        results.append(self._tool_router.route(request))
                     if reflect_steps:
                         reflect_step_completed(plan_id, decision.task_id, planning_engine=engine)
                 elif reflect_steps:
@@ -1185,6 +1197,33 @@ class Agent:
             raise
         self._record_tool_outcomes(decisions, results, run=run, project=project)
         return projection, run, decisions, results
+
+    def _route_with_transient_retry(self, request: ToolRequest) -> ToolResult:
+        """v8.33 bounded in-run retry (owner policy O5, locked).
+
+        Routes ``request`` through the unchanged ``ToolRouter`` at most three
+        times: the initial attempt plus at most two retries, with no delay.
+        A failure is retried only if the v8.30 type-based classifier says
+        TRANSIENT (``_classify_execution_failure``; UNKNOWN is never
+        retried) and an attempt remains; any other failure, or the third
+        failure, is re-raised unchanged — the exact exception object of that
+        final attempt. The successful attempt's ``ToolResult`` is returned
+        as-is. Intermediate failures stay inside this method, so they never
+        reach run-status recording or failure writeback; the step stays
+        ACTIVE throughout (it is reflected by the caller). ``BaseException``
+        that is not an ``Exception`` (e.g. ``KeyboardInterrupt``) is never
+        retried. No state, no sleep, no new run.
+        """
+        max_attempts = 3  # O5: initial attempt + at most 2 retries (hard bound)
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return self._tool_router.route(request)
+            except Exception as exc:
+                if attempt == max_attempts or (
+                    _classify_execution_failure(exc) is not FailureCategory.TRANSIENT
+                ):
+                    raise
+        raise AssertionError("unreachable: every attempt returns or raises")
 
     def _record_tool_outcomes(
         self,
@@ -1371,7 +1410,7 @@ class Agent:
         )
         try:
             run, decisions, results = self._run_projected_pipeline(
-                projection, project=project, reflect_steps=True
+                projection, project=project, reflect_steps=True, retry_transient=True
             )
         except BaseException as exc:
             self._record_failure_outcome(projection, exc, project=project)
@@ -1430,6 +1469,7 @@ class Agent:
                 projection,
                 project=project,
                 reflect_steps=True,
+                retry_transient=True,
                 skip_task_ids=skip_task_ids,
                 resumes_run_id=run_id,
             )

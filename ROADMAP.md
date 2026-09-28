@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.32 complete** · Active milestone: **none** · Next planned: **v8.33 Bounded In-Run Retry — NOT STARTED**
-> Verified suite at checkpoint: **2134 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.33 complete** · Active milestone: **none** · Next planned: **v8.34 Context Policy and History Trimming — NOT STARTED**
+> Verified suite at checkpoint: **2185 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -40,7 +40,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.30 execution failure taxonomy | ✅ Complete |
 | v8.31 tool catalog (metadata + schema validation) | ✅ Complete |
 | v8.32 resume a failed lifecycle run | ✅ Complete |
-| v8.33–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
+| v8.33 bounded in-run retry | ✅ Complete |
+| v8.34–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -347,6 +348,38 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   and the step-reflection / failure-writer caller sets (+`resume_failed_run`,
   retry still forbidden); two v8.31 "no consumer yet" catalog guards.
   Verified: 37 new focused, full suite 2134.
+- v8.33 Bounded In-Run Retry — private `Agent._route_with_transient_retry`
+  wrapped around the unchanged `ToolRouter.route`, opted into only by the
+  lifecycle path (`execute_projection_with_lifecycle`) and
+  `resume_failed_run` through an additive `retry_transient=False` flag on the
+  shared `_run_projected_pipeline`; every other path routes exactly once.
+  **Locked owner policy O5:** TRANSIENT failures only; at most **2 retries**
+  after the initial attempt, i.e. **at most 3 tool invocations per step**
+  (hard bound: a literal `for` over three attempts, no `while`); **0-second
+  delay** (no sleep, backoff, scheduler, timer, queue or async); the step
+  stays **ACTIVE** during retry and becomes COMPLETED only after a
+  successful invocation (whose exact `ToolResult` is used); the **final
+  attempt's exception is re-raised unchanged** (same object); **exactly one
+  failure writeback** after exhaustion or a non-retryable failure —
+  intermediate failures never leave the retry method, so they produce no
+  writeback, no run-status change and no new run; **UNKNOWN is never
+  retried**; `BaseException` that is not an `Exception` is never retried.
+  **Transient signal (explicit, type-based):** new
+  `TransientToolError(ToolError)` in `core/tool_interface.py` (the
+  owner-approved plan's signal, withheld in v8.30 for lack of a consumer),
+  mapped to TRANSIENT in the Agent's rule table — the only TRANSIENT
+  mapping; classification still walks the class MRO against explicit
+  rules and never reads message / repr / args / traceback; generic
+  exceptions (incl. `TimeoutError`, `ConnectionError`) stay UNKNOWN. A
+  resumed attempt retries within its one new run (no extra run per retry).
+  Router, registry, catalog, taxonomy leaf, statuses, lifecycle, v8.32
+  O4 / O6 / O7 and failure-record format unchanged. Sanctioned test
+  updates: v8.11 `ToolError` hierarchy / `__all__` pins
+  (+`TransientToolError`); run-helper call set and router allowlist
+  (+`_route_with_transient_retry`); v8.30 guards ("nothing is transient",
+  "execution never classifies" → only the lifecycle path classifies);
+  "no retry surface" guards (+ the one retry helper). Verified: 51 new
+  focused, full suite 2185.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -355,15 +388,17 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.32 — Resume a Failed Lifecycle Run: COMPLETE.**
+**v8.33 — Bounded In-Run Retry: COMPLETE.**
 
-- Full suite: 2134 passed, 0 failed, 0 errors, 0 skipped.
-- Frozen legacy modules: zero diff; only `core/agent/__init__.py` changed in
-  production (every store, leaf, tool, catalog, taxonomy, provider and
-  memory/reflection/learning module unchanged).
-- A FAILED lifecycle attempt can be resumed explicitly under O4 / O6 / O7.
-  Retry (v8.33), context management and tool calling remain deferred to
-  their planned milestones.
+- Full suite: 2185 passed, 0 failed, 0 errors, 0 skipped.
+- Frozen legacy modules: zero diff; production changes only in
+  `core/agent/__init__.py` and the additive `TransientToolError` in
+  `core/tool_interface.py` (router, registry, catalog, taxonomy, stores,
+  providers and memory/reflection/learning unchanged).
+- Retry / resume (area 3) is complete: the lifecycle path retries
+  tool-declared transient failures under O5 and FAILED attempts can be
+  resumed under O4 / O6 / O7. Context management and tool calling remain
+  deferred to their planned milestones.
 
 ---
 
@@ -756,11 +791,19 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.33 — Bounded In-Run Retry — **NOT STARTED**
+### v8.34 — Context Policy and History Trimming — **NOT STARTED**
 
 Per the owner-authorized plan above. Contract audit required before
-implementation; open inputs: how a tool signals a *transient* failure (v8.30 —
-nothing maps to TRANSIENT yet) and the retry policy values (O5).
+implementation; open input: the policy values (O5 context part: message /
+character limits).
+
+### v8.33 — Bounded In-Run Retry — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+Owner policy O5 locked before implementation: TRANSIENT only; max 2 retries
+(max 3 total tool invocations per step); 0-second delay; step ACTIVE during
+retry; final exception unchanged; exactly one final failure writeback;
+explicit type-based TRANSIENT classification (`TransientToolError`); UNKNOWN
+is not retried.
 
 ### v8.32 — Resume a Failed Lifecycle Run — **COMPLETE** (moved to history above; kept here as the discovery record)
 

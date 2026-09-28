@@ -127,7 +127,10 @@ class TestToolError:
         assert ToolError.__bases__ == (Exception,)
 
     def test_no_hierarchy(self) -> None:
-        assert ToolError.__subclasses__() == []
+        # v8.33: the one sanctioned subclass is the explicit transient signal.
+        from core.tool_interface import TransientToolError
+
+        assert ToolError.__subclasses__() == [TransientToolError]
 
     def test_raise_and_catch(self) -> None:
         with pytest.raises(ToolError, match="boom"):
@@ -265,8 +268,9 @@ class TestPublicAPI:
     def test_all_exact(self) -> None:
         assert set(tool_module.__all__) == {
             "ToolRequest", "ToolResult", "ToolError", "ToolInterface", "StaticMockTool",
+            "TransientToolError",  # v8.33 transient signal
         }
-        assert len(tool_module.__all__) == 5
+        assert len(tool_module.__all__) == 6
 
     def test_all_names_resolve(self) -> None:
         for name in tool_module.__all__:

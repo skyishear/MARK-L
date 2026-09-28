@@ -374,7 +374,7 @@ class TestArchitecture:
     def test_no_retry_or_resume_surface(self) -> None:
         for name in dir(Agent):
             low = name.lower()
-            if name in {"resume_failed_run", "_prepare_resume"}:  # v8.32 sanctioned resume (owner-authorized)
+            if name in {"resume_failed_run", "_prepare_resume", "_route_with_transient_retry"}:  # v8.32 / v8.33 sanctioned
                 continue
             assert not any(w in low for w in ("retry", "resume", "reexecut", "re_execut", "attempt")), name
 
