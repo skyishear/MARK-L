@@ -350,7 +350,9 @@ class TestSeparationFromExecution:
         a = Agent()
         a.tool_registry.register(StaticMockTool(name="fix the wifi"))
         _, run, _, results = a.execute_projection_with_run_status("fix the wifi")
-        assert len(results) == 1 and not hasattr(a, "tool_catalog")
+        assert len(results) == 1
+        # v8.32: the Agent owns an (empty by default) catalog; execution ignores it.
+        assert a.tool_catalog.list() == ()
 
 
 # ── architecture ────────────────────────────────────────────────────────
@@ -386,13 +388,14 @@ class TestArchitecture:
                     and isinstance(c.func.value, ast.Name) and c.func.value.id.startswith("_")}
         assert not mutating & {"append", "update", "pop", "clear", "setdefault"}
 
-    def test_nothing_imports_it_yet(self) -> None:
+    def test_only_the_agent_imports_it(self) -> None:
+        # v8.32: the Agent (composition root) is the one sanctioned consumer.
         for name in os.listdir(CORE_DIR):
             if name.endswith(".py") and name != "tool_catalog.py":
                 with open(os.path.join(CORE_DIR, name), encoding="utf-8") as f:
                     assert "tool_catalog" not in f.read(), name
         with open(os.path.join(CORE_DIR, "agent", "__init__.py"), encoding="utf-8") as f:
-            assert "tool_catalog" not in f.read()
+            assert "from core.tool_catalog import ToolCatalog" in f.read()
 
     def test_tool_stack_contracts_unchanged(self) -> None:
         assert [f.name for f in dataclasses.fields(ToolRequest)] == ["tool_name", "arguments"]

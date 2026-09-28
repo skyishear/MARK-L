@@ -465,6 +465,7 @@ class TestArchitecture:
             "core.step_lifecycle",
             "core.execution_failure",
             "core.failure_taxonomy",
+            "core.tool_catalog",
             "core.tool_registry", "core.tool_router",
         }
 

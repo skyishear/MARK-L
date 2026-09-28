@@ -42,7 +42,7 @@ from core.skill_registry import dispatch as skill_dispatch, is_registered
 from core.execution_failure import normalize_execution_failure
 from core.failure_taxonomy import FailureCategory, classify_failure
 from core.execution_planner import ExecutionPlanner
-from core.goal_manager import GoalManager
+from core.goal_manager import GoalManager, GoalStatus
 from core.lifecycle_reflection import reflect_execution_completed, reflect_execution_started
 from core.pipeline_engine import PipelineEngine
 from core.pipeline_run import PipelineRun, PipelineRunManager, PipelineRunStatus
@@ -55,6 +55,7 @@ from core.task_graph import TaskGraph
 from core.tool_dispatch import ToolDispatchDecision, build_tool_dispatch_decision
 from core.tool_interface import ToolRequest, ToolResult
 from core.tool_registry import ToolRegistry
+from core.tool_catalog import ToolCatalog
 from core.tool_router import ToolNotFoundError, ToolRouter
 
 __all__ = [
@@ -272,6 +273,10 @@ class Agent:
         self._tool_router = (
             tool_router if tool_router is not None else ToolRouter(self._tool_registry)
         )
+        # v8.32: Agent-owned v8.31 ToolCatalog (metadata only; separate from
+        # the registry). No constructor parameter: the v8.15 / v8.21 pins fix
+        # the signature. Consulted only by ``resume_failed_run`` (O4).
+        self._tool_catalog = ToolCatalog()
 
     @property
     def history(self) -> HistoryManager:
@@ -362,6 +367,15 @@ class Agent:
     def tool_router(self) -> ToolRouter:
         """The composed v8.14 ToolRouter (unchanged; not used by request handling)."""
         return self._tool_router
+
+    @property
+    def tool_catalog(self) -> ToolCatalog:
+        """The Agent-owned v8.31 ToolCatalog (v8.32; empty by default).
+
+        Tool metadata only — register ``ToolSpec``s here. Consulted solely by
+        ``resume_failed_run`` to decide whether a failed step may be resumed.
+        """
+        return self._tool_catalog
 
     def create_execution_session(
         self,
@@ -1062,6 +1076,8 @@ class Agent:
         project: str | None,
         reflect_steps: bool = False,
         dispatched: list[ToolDispatchDecision] | None = None,
+        skip_task_ids: frozenset[str] | None = None,
+        resumes_run_id: str | None = None,
     ) -> tuple[PipelineRun, tuple[ToolDispatchDecision, ...], tuple[ToolResult, ...]]:
         """v8.23 run body (extracted unchanged in v8.25 so the lifecycle-aware
         path can reuse it): ``create_run`` (CREATED) -> stage decisions ->
@@ -1078,24 +1094,32 @@ class Agent:
 
         ``dispatched`` (v8.28, caller-owned, set only by the v8.24 path)
         receives each dispatched decision just before it is routed, so the
-        caller can name the failed stage; it changes nothing else."""
+        caller can name the failed stage; it changes nothing else.
+
+        ``skip_task_ids`` / ``resumes_run_id`` (v8.32, set only by
+        ``resume_failed_run``): stages whose task id is in ``skip_task_ids``
+        (steps already COMPLETED or ARCHIVED) are left out of this run —
+        not dispatched, not reflected, not returned — and the new run's
+        metadata records ``"resumes_run_id"``. Defaults change nothing."""
         pipeline = self._pipeline_engine.get_pipeline(projection.pipeline_id)
         if pipeline is None:
             raise KeyError(projection.pipeline_id)
-        run = self._pipeline_run_manager.create_run(
-            projection.pipeline_id,
-            metadata={
-                "project": project,
-                "goal_id": projection.goal_id,
-                "mapping_id": projection.mapping_id,
-            },
-        )
+        metadata: dict[str, Any] = {
+            "project": project,
+            "goal_id": projection.goal_id,
+            "mapping_id": projection.mapping_id,
+        }
+        if resumes_run_id is not None:
+            metadata["resumes_run_id"] = resumes_run_id
+        run = self._pipeline_run_manager.create_run(projection.pipeline_id, metadata=metadata)
         decisions = build_stage_dispatch_decisions(
             pipeline,
             task_graph=self._task_graph,
             registry=self._tool_registry,
             context={"project": project},
         )
+        if skip_task_ids:
+            decisions = tuple(d for d in decisions if d.task_id not in skip_task_ids)
         self._pipeline_run_manager.update_run(run.id, status=PipelineRunStatus.RUNNING)
         results: list[ToolResult] = []
         plan_id = projection.plan_id
@@ -1360,6 +1384,135 @@ class Agent:
         )
         self._record_tool_outcomes(decisions, results, run=run, project=project)
         return projection, run, decisions, results
+
+    def resume_failed_run(
+        self,
+        run_id: str,
+    ) -> tuple[PlanProjection, PipelineRun, tuple[ToolDispatchDecision, ...], tuple[ToolResult, ...]]:
+        """v8.32: resume a FAILED lifecycle attempt as a **new** ``PipelineRun``
+        on the **same** projected pipeline (owner decisions O4 / O6 / O7).
+
+        Everything that can forbid the resume is checked **before** the new
+        run is created (``_prepare_resume``); a refused resume changes
+        nothing. The failed run is never modified. Stages are considered in
+        pipeline order with freshly rebuilt decisions:
+
+        * COMPLETED step — skipped: not invoked, not reflected, no new
+          success writeback (O7);
+        * ARCHIVED step — skipped, never re-checked against the registry
+          (O6);
+        * ACTIVE (failed) step — re-dispatched only if its ``ToolSpec`` in
+          ``self.tool_catalog`` is ``idempotent=True`` (O4; no spec or
+          ``idempotent=False`` refuses the resume, no override);
+        * DRAFT step — executed normally (v8.26 step semantics).
+
+        The new run carries ``{"project", "goal_id", "mapping_id",
+        "resumes_run_id"}`` metadata (``project`` from the failed run) and
+        follows the v8.25-v8.27 lifecycle exactly: COMPLETED -> Plan / Goal
+        COMPLETED + success writeback for the stages newly executed in this
+        run only; FAILED -> Goal / Plan stay ACTIVE, exactly one failure
+        writeback for this run (new ``run_id``), original exception
+        re-raised unchanged. No retry, no new status. Returns the
+        lifecycle 4-tuple ``(projection, new_run, decisions, results)``
+        where ``decisions`` covers only the stages of this run.
+
+        Raises (before any change):
+            KeyError: unknown ``run_id``.
+            ValueError: the run is not FAILED, is not a lifecycle attempt
+                (its Goal / Plan are not ACTIVE), its pipeline / mapping /
+                plan cannot be resolved, or a failed ACTIVE step is not
+                resumable (tool not registered, no ``ToolSpec``, or not
+                idempotent).
+        """
+        projection, project, skip_task_ids = self._prepare_resume(run_id)
+        try:
+            run, decisions, results = self._run_projected_pipeline(
+                projection,
+                project=project,
+                reflect_steps=True,
+                skip_task_ids=skip_task_ids,
+                resumes_run_id=run_id,
+            )
+        except BaseException as exc:
+            self._record_failure_outcome(projection, exc, project=project)
+            raise
+        reflect_execution_completed(
+            projection.goal_id,
+            projection.plan_id,
+            goal_manager=self._goal_manager,
+            planning_engine=self._planning_engine,
+        )
+        self._record_tool_outcomes(decisions, results, run=run, project=project)
+        return projection, run, decisions, results
+
+    def _prepare_resume(self, run_id: str) -> tuple[PlanProjection, str | None, frozenset[str]]:
+        """Read-only validation for ``resume_failed_run``: resolve the failed
+        run's projection and decide which stages to skip. Writes nothing."""
+        run = self._pipeline_run_manager.get_run(run_id)
+        if run is None:
+            raise KeyError(run_id)
+        if run.status is not PipelineRunStatus.FAILED:
+            raise ValueError(f"run {run_id!r} is {run.status.value}; only a FAILED run can be resumed")
+        pipeline = self._pipeline_engine.get_pipeline(run.pipeline_reference)
+        mapping = (
+            self._execution_planner.get_execution_plan(pipeline.execution_mapping_reference)
+            if pipeline is not None else None
+        )
+        plan = (
+            self._planning_engine.get_plan(mapping.plan_reference)
+            if mapping is not None and mapping.plan_reference else None
+        )
+        goal = (
+            self._goal_manager.get_goal(mapping.goal_reference)
+            if mapping is not None and mapping.goal_reference else None
+        )
+        if pipeline is None or mapping is None or plan is None or goal is None:
+            raise ValueError(f"run {run_id!r}: its pipeline, mapping, plan or goal cannot be resolved")
+        if goal.status is not GoalStatus.ACTIVE or plan.status is not PlanStatus.ACTIVE:
+            raise ValueError(f"run {run_id!r} is not a failed lifecycle attempt (goal / plan not ACTIVE)")
+        project = run.metadata.get("project")
+        decisions = {
+            d.task_id: d
+            for d in build_stage_dispatch_decisions(
+                pipeline,
+                task_graph=self._task_graph,
+                registry=self._tool_registry,
+                context={"project": project},
+            )
+        }
+        skip: set[str] = set()
+        for step in plan.steps:
+            if step.status in (PlanStatus.COMPLETED, PlanStatus.ARCHIVED):
+                skip.add(step.id)
+            elif step.status is PlanStatus.ACTIVE:
+                decision = decisions.get(step.id)
+                if decision is None or not decision.would_dispatch:
+                    raise ValueError(f"run {run_id!r}: failed step {step.id!r} has no registered tool")
+                spec = self._tool_catalog.get(decision.tool_name)
+                if spec is None:
+                    raise ValueError(
+                        f"run {run_id!r}: failed step {step.id!r} has no ToolSpec; not resumable"
+                    )
+                if not spec.idempotent:
+                    raise ValueError(
+                        f"run {run_id!r}: failed step {step.id!r} is not idempotent; not resumable"
+                    )
+        task_to_node: dict[str, str] = {}
+        for stage in pipeline.stages:
+            node = self._task_graph.get_node(stage.node_id)
+            if node is not None and isinstance(node.metadata.get("task_id"), str):
+                task_to_node[node.metadata["task_id"]] = node.id
+        projection = PlanProjection(
+            goal_id=goal.id,
+            plan_id=plan.id,
+            graph_reference=mapping.graph_reference or plan.id,
+            mapping_id=mapping.id,
+            pipeline_id=pipeline.id,
+            step_ids=tuple(step.id for step in plan.steps),
+            node_ids=tuple(task_to_node[step.id] for step in plan.steps if step.id in task_to_node),
+            task_to_node=task_to_node,
+        )
+        return projection, project, frozenset(skip)
 
     def snapshot(self) -> dict[str, Any]:
         """Return a read-only aggregate snapshot across Foundation modules.

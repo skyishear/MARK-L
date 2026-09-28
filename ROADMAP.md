@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.31 complete** · Active milestone: **none** · Next planned: **v8.32 Resume a Failed Lifecycle Run — NOT STARTED**
-> Verified suite at checkpoint: **2097 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.32 complete** · Active milestone: **none** · Next planned: **v8.33 Bounded In-Run Retry — NOT STARTED**
+> Verified suite at checkpoint: **2134 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -39,7 +39,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.29 tool-chain failure writeback (v8.20) | ✅ Complete |
 | v8.30 execution failure taxonomy | ✅ Complete |
 | v8.31 tool catalog (metadata + schema validation) | ✅ Complete |
-| v8.32–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
+| v8.32 resume a failed lifecycle run | ✅ Complete |
+| v8.33–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -309,6 +310,43 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   the Agent and every execution path unchanged. No tool calling, retry,
   resume, confirmation or provider code. Verified: 78 new focused, full
   suite 2097.
+- v8.32 Resume a Failed Lifecycle Run — new public
+  `Agent.resume_failed_run(run_id)` (plus read-only `_prepare_resume`) and an
+  Agent-owned, empty-by-default `ToolCatalog` exposed as `Agent.tool_catalog`
+  (no constructor parameter: the v8.15 / v8.21 signature pins fix it). All
+  refusals happen **before** any run is created: unknown run → `KeyError`;
+  not FAILED (COMPLETED / CREATED / RUNNING / CANCELLED), not a lifecycle
+  attempt (its Goal / Plan not ACTIVE — e.g. a v8.23 / v8.24 run),
+  unresolvable pipeline / mapping / plan / goal, or a non-resumable failed
+  ACTIVE step → `ValueError`. The resume creates a **new** `PipelineRun` on
+  the **same** pipeline (no new pipeline, mapping or projection) with
+  metadata `{project, goal_id, mapping_id, resumes_run_id}` (`project` taken
+  from the failed run); the failed run is never modified. Execution reuses
+  the shared `_run_projected_pipeline` (additive `skip_task_ids` /
+  `resumes_run_id`, both off by default) with freshly rebuilt decisions in
+  pipeline order. **Locked owner decisions:** **O4** — the failed ACTIVE
+  step is re-dispatched only if its `ToolSpec` is `idempotent=True`; a
+  missing spec or `idempotent=False` refuses the resume, no override;
+  **O6** — ARCHIVED steps remain ARCHIVED and are never re-checked against
+  the registry or re-dispatched; **O7** — stages COMPLETED in an earlier
+  attempt are skipped and get no new success writeback (only stages newly
+  executed in the resumed run do). Additional conservative rule (edge not
+  covered by O4/O6/O7): a failed ACTIVE step whose tool is no longer
+  registered refuses the resume (it would otherwise be relabelled ARCHIVED,
+  "not executed"). DRAFT steps execute with v8.26 semantics (ACTIVE →
+  COMPLETED, ARCHIVED if unregistered, ACTIVE on failure, later steps stay
+  DRAFT). Success → run COMPLETED, Plan / Goal COMPLETED (existing lifecycle
+  reflection), success writeback for this run's stages; failure → run
+  FAILED, Goal / Plan ACTIVE, exactly one failure writeback with the new
+  `run_id`, original exception re-raised unchanged. A resumed attempt that
+  fails can itself be resumed. No retry, no new status or transition, no
+  change to v8.20 / v8.22 / v8.23 / v8.24, the registry, router, catalog or
+  stores. Sanctioned test updates: Agent import allowlists
+  (+`core.tool_catalog`); registry/router consultation allowlist
+  (+`_prepare_resume`, reads the registry only); "no resume surface" guards
+  and the step-reflection / failure-writer caller sets (+`resume_failed_run`,
+  retry still forbidden); two v8.31 "no consumer yet" catalog guards.
+  Verified: 37 new focused, full suite 2134.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -317,16 +355,15 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.31 — Tool Catalog: COMPLETE.**
+**v8.32 — Resume a Failed Lifecycle Run: COMPLETE.**
 
-- Full suite: 2097 passed, 0 failed, 0 errors, 0 skipped.
-- Only new files (`core/tool_catalog.py`, its tests, docs); no existing
-  module changed, frozen legacy modules zero diff.
-- Tool metadata (declarations, argument schemas, safety flags) now exists
-  beside the execution registry for the planned resume / retry (v8.32–v8.33)
-  and tool-calling (v8.37+) consumers; nothing consumes it yet and no
-  behaviour changed. Retry / resume, context management and tool calling
-  remain deferred to their planned milestones.
+- Full suite: 2134 passed, 0 failed, 0 errors, 0 skipped.
+- Frozen legacy modules: zero diff; only `core/agent/__init__.py` changed in
+  production (every store, leaf, tool, catalog, taxonomy, provider and
+  memory/reflection/learning module unchanged).
+- A FAILED lifecycle attempt can be resumed explicitly under O4 / O6 / O7.
+  Retry (v8.33), context management and tool calling remain deferred to
+  their planned milestones.
 
 ---
 
@@ -719,12 +756,17 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.32 — Resume a Failed Lifecycle Run — **NOT STARTED**
+### v8.33 — Bounded In-Run Retry — **NOT STARTED**
 
 Per the owner-authorized plan above. Contract audit required before
-implementation; owner decisions O4 (resume of a non-idempotent failed stage),
-O6 (ARCHIVED stages on resume) and O7 (success records for stages completed in
-earlier attempts) are needed first.
+implementation; open inputs: how a tool signals a *transient* failure (v8.30 —
+nothing maps to TRANSIENT yet) and the retry policy values (O5).
+
+### v8.32 — Resume a Failed Lifecycle Run — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+Owner decisions locked before implementation: O4 non-idempotent failed step =
+blocked, no override; O6 ARCHIVED = remains archived, never re-dispatched;
+O7 previous-run completed stages = no new success writeback.
 
 ### v8.31 — Tool Catalog — **COMPLETE** (moved to history above; kept here as the discovery record)
 

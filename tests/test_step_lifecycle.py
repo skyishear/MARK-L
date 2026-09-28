@@ -433,7 +433,8 @@ class TestArchitecture:
                     if (isinstance(c, ast.Call) and getattr(c.func, "attr", None) == "_run_projected_pipeline"
                             and any(k.arg == "reflect_steps" for k in c.keywords)):
                         enabling.add(fn.name)
-        assert enabling == {"execute_projection_with_lifecycle"}
+        # v8.32: resume_failed_run continues a lifecycle attempt (same step semantics).
+        assert enabling == {"execute_projection_with_lifecycle", "resume_failed_run"}
 
     def test_failure_handler_writes_no_step(self) -> None:
         helper = _agent_method("_run_projected_pipeline")

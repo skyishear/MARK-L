@@ -298,6 +298,7 @@ class TestBehaviouralFreeze:
                 "execute_projection_with_run_status",  # v8.23
                 "_run_projected_pipeline",  # v8.25 helper shared by v8.23/v8.25
                 "_run_tool_dispatch_chain",  # v8.29 helper shared by v8.19/v8.20
+                "_prepare_resume",  # v8.32 resume validation: rebuilds decisions (no routing)
             ):
                 for sub in ast.walk(node):
                     if isinstance(sub, ast.Attribute):

@@ -374,6 +374,8 @@ class TestArchitecture:
     def test_no_retry_or_resume_surface(self) -> None:
         for name in dir(Agent):
             low = name.lower()
+            if name in {"resume_failed_run", "_prepare_resume"}:  # v8.32 sanctioned resume (owner-authorized)
+                continue
             assert not any(w in low for w in ("retry", "resume", "reexecut", "re_execut", "attempt")), name
 
     def test_status_vocabularies_unchanged(self) -> None:
@@ -423,7 +425,8 @@ class TestArchitecture:
                     if isinstance(c, ast.Call) and getattr(c.func, "attr", None) == "_record_failure_outcome":
                         callers.add(fn.name)
         assert callers == {"execute_projection_with_lifecycle", "execute_projection_with_writeback",
-                           "execute_request_with_tool_dispatch_writeback"}
+                           "execute_request_with_tool_dispatch_writeback",
+                           "resume_failed_run"}  # v8.32: one writeback per resumed attempt
 
     def test_no_new_module_or_public_api(self) -> None:
         assert len(agent_module.__all__) == 16

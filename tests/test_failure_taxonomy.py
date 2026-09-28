@@ -242,6 +242,8 @@ class TestNoBehaviourChange:
     def test_no_retry_or_resume_surface(self) -> None:
         for name in dir(Agent):
             low = name.lower()
+            if name in {"resume_failed_run", "_prepare_resume"}:  # v8.32 sanctioned resume (owner-authorized)
+                continue
             assert not any(w in low for w in ("retry", "resume", "attempt", "backoff")), name
         assert not hasattr(ToolRouter, "retry") and not hasattr(ToolRouter, "classify")
 
