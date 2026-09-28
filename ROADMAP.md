@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.30 complete** · Active milestone: **none** · Next planned: **v8.31 Tool Catalog — NOT STARTED**
-> Verified suite at checkpoint: **2019 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.31 complete** · Active milestone: **none** · Next planned: **v8.32 Resume a Failed Lifecycle Run — NOT STARTED**
+> Verified suite at checkpoint: **2097 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -38,7 +38,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.28 failure writeback expansion (v8.24) + shared failure normalization | ✅ Complete |
 | v8.29 tool-chain failure writeback (v8.20) | ✅ Complete |
 | v8.30 execution failure taxonomy | ✅ Complete |
-| v8.31–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
+| v8.31 tool catalog (metadata + schema validation) | ✅ Complete |
+| v8.32–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -283,6 +284,31 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   records unchanged, exception propagation, tool stack, stores, statuses and
   providers unchanged. Sanctioned test updates: Agent import allowlists
   (+`core.failure_taxonomy`). Verified: 54 new focused, full suite 2019.
+- v8.31 Tool Catalog — new stdlib-only leaf `core/tool_catalog.py`
+  (metadata + schema validation only; no importer yet, no existing file
+  changed). Frozen/slotted `ToolSpec(name, description, parameters,
+  idempotent=False, side_effects=True, model_invocable=False)` — most
+  restrictive defaults, data only (nothing acts on them). `parameters` is a
+  **declaration** validated at construction by the pure
+  `validate_parameters_schema` against a bounded JSON-Schema subset (root
+  `type: "object"`; types object / array / string / number / integer /
+  boolean; `description`; object `properties` / `required` (unique, present
+  in properties) / `additionalProperties` (bool); array `items`; scalar
+  `enum` (non-empty, unique, type-consistent); any other keyword, keyword on
+  the wrong type or type union → `InvalidToolSchemaError(ValueError)` with a
+  path, nothing repaired) and stored as a deep read-only copy (mappings
+  behind `MappingProxyType`, arrays as tuples — JSON-equivalent, same keys,
+  order and values). `ToolCatalog` (`register` / `get` / `list`) follows the
+  `ToolRegistry` conventions: independent instance with an `RLock`,
+  insertion order, same-object re-registration a no-op, a different spec
+  under the same name → `ToolSpecAlreadyRegisteredError(ValueError)`,
+  unknown `get` → `None`, tuple snapshots. The catalog is separate from the
+  execution registry: no spec ⇒ no metadata ⇒ not model-invocable and not
+  eligible for any future catalog-driven decision; `ToolInterface`,
+  `ToolRequest`, `ToolResult`, `ToolError`, `ToolRegistry`, `ToolRouter`,
+  the Agent and every execution path unchanged. No tool calling, retry,
+  resume, confirmation or provider code. Verified: 78 new focused, full
+  suite 2097.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -291,17 +317,16 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.30 — Execution Failure Taxonomy: COMPLETE.**
+**v8.31 — Tool Catalog: COMPLETE.**
 
-- Full suite: 2019 passed, 0 failed, 0 errors, 0 skipped.
-- Frozen legacy modules: zero diff; every v8.x store, leaf, tool, provider
-  and memory/reflection/learning module unchanged (only
-  `core/agent/__init__.py` and the new leaf `core/failure_taxonomy.py`).
-- A provider-neutral failure classification foundation exists for the
-  planned retry (v8.33) and tool-error feedback (v8.39) consumers; nothing
-  consumes it yet and no behaviour changed. v8.31 is next; retry / resume,
-  context management and tool calling remain deferred to their planned
-  milestones.
+- Full suite: 2097 passed, 0 failed, 0 errors, 0 skipped.
+- Only new files (`core/tool_catalog.py`, its tests, docs); no existing
+  module changed, frozen legacy modules zero diff.
+- Tool metadata (declarations, argument schemas, safety flags) now exists
+  beside the execution registry for the planned resume / retry (v8.32–v8.33)
+  and tool-calling (v8.37+) consumers; nothing consumes it yet and no
+  behaviour changed. Retry / resume, context management and tool calling
+  remain deferred to their planned milestones.
 
 ---
 
@@ -694,12 +719,17 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.31 — Tool Catalog — **NOT STARTED**
+### v8.32 — Resume a Failed Lifecycle Run — **NOT STARTED**
 
-Per the owner-authorized plan above: per-tool declarations, argument schemas and
-safety flags held beside the registry (`ToolInterface` untouched), most
-restrictive defaults. Contract audit required before implementation. Open input
-from v8.30: how a tool signals a *transient* failure (no such signal exists yet).
+Per the owner-authorized plan above. Contract audit required before
+implementation; owner decisions O4 (resume of a non-idempotent failed stage),
+O6 (ARCHIVED stages on resume) and O7 (success records for stages completed in
+earlier attempts) are needed first.
+
+### v8.31 — Tool Catalog — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+Implemented as the stdlib-only leaf `core/tool_catalog.py`. Still open from
+v8.30: how a tool signals a *transient* failure (no such signal exists yet).
 
 ### v8.30 — Failure Category / Transient-Error Taxonomy — **COMPLETE** (moved to history above; kept here as the discovery record)
 
