@@ -349,9 +349,10 @@ class TestNotExecutionFailures:
     @pytest.mark.parametrize("method", [
         "execute_projection_with_tool_dispatch",
         "execute_projection_with_run_status",
-        "execute_projection_with_writeback",
+        # v8.24 (execute_projection_with_writeback) writes failures since
+        # v8.28 -- see tests/test_failure_writeback_v8_24.py.
     ])
-    def test_v8_22_to_v8_24_failure_writes_nothing(self, method: str, memory: list) -> None:
+    def test_v8_22_and_v8_23_failure_write_nothing(self, method: str, memory: list) -> None:
         a = agent_with(StaticMockTool(name="step one"), Failing("step two", ToolError("x")))
         with pytest.raises(ToolError):
             getattr(a, method)(THREE)
@@ -384,12 +385,15 @@ class TestArchitecture:
         assert len(ALLOWED_TRANSITIONS) == 5
 
     def test_writeback_never_reads_exception_text(self) -> None:
+        # v8.28: the exception is handed only to the shared normalizer, which
+        # reads nothing but ``type(exc).__name__`` (pinned in
+        # tests/test_execution_failure.py).
         node = _method("_record_failure_outcome")
         uses = [n for n in ast.walk(node) if isinstance(n, ast.Name) and n.id == "exc"]
-        type_calls = [c for c in ast.walk(node) if isinstance(c, ast.Call)
-                      and isinstance(c.func, ast.Name) and c.func.id == "type"
-                      and len(c.args) == 1 and isinstance(c.args[0], ast.Name) and c.args[0].id == "exc"]
-        assert len(uses) == len(type_calls) == 1  # only ``type(exc)``
+        norm_calls = [c for c in ast.walk(node) if isinstance(c, ast.Call)
+                      and isinstance(c.func, ast.Name) and c.func.id == "normalize_execution_failure"
+                      and c.args and isinstance(c.args[0], ast.Name) and c.args[0].id == "exc"]
+        assert len(uses) == len(norm_calls) == 1  # only ``normalize_execution_failure(exc, ...)``
         body = [n for stmt in node.body for n in ast.walk(stmt)]  # excludes signature annotations
         names = {n.id for n in body if isinstance(n, ast.Name)}
         attrs = {n.attr for n in body if isinstance(n, ast.Attribute)}
@@ -409,14 +413,15 @@ class TestArchitecture:
         assert isinstance(h.type, ast.Name) and h.type.id == "Exception"
         assert not [n for n in ast.walk(h) if isinstance(n, ast.Raise)]
 
-    def test_only_lifecycle_method_writes_failures(self) -> None:
+    def test_only_lifecycle_and_v8_24_methods_write_failures(self) -> None:
+        # v8.28 extended failure writeback to the v8.24 path (owner-authorized).
         callers = set()
         for fn in ast.walk(_agent_tree()):
             if isinstance(fn, ast.FunctionDef):
                 for c in ast.walk(fn):
                     if isinstance(c, ast.Call) and getattr(c.func, "attr", None) == "_record_failure_outcome":
                         callers.add(fn.name)
-        assert callers == {"execute_projection_with_lifecycle"}
+        assert callers == {"execute_projection_with_lifecycle", "execute_projection_with_writeback"}
 
     def test_no_new_module_or_public_api(self) -> None:
         assert len(agent_module.__all__) == 16

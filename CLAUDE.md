@@ -31,10 +31,10 @@ Never rely on previous conversations. Verify the current state before acting.
 ## Current Repository State
 
 - Legacy v3.x execution stack: **frozen** (read-only; see `ROADMAP.md`).
-- Active surface: v8.x Foundation stores, v8.11–v8.20 tool stack, v8.21–v8.27 projection path.
-- Checkpoint: **v8.27 complete**; active milestone: none; next milestone blocked on
-  open owner decisions recorded in `ROADMAP.md` (the living checkpoint).
-- Verified suite: **1879 passed, 0 failed, 0 errors, 0 skipped**.
+- Active surface: v8.x Foundation stores, v8.11–v8.20 tool stack, v8.21–v8.28 projection path.
+- Checkpoint: **v8.28 complete**; active milestone: none; next planned milestone:
+  **v8.29** of the owner-authorized plan recorded in `ROADMAP.md` (the living checkpoint).
+- Verified suite: **1929 passed, 0 failed, 0 errors, 0 skipped**.
 
 Details and history live in `ROADMAP.md` — do not duplicate them here.
 

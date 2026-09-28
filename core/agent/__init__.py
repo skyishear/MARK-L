@@ -39,6 +39,7 @@ from core.skill_dispatch import SkillDispatchDecision, build_dispatch_decision
 from core.skill_registry import dispatch as skill_dispatch, is_registered
 # v8.x Foundation stores (v8.10 bridge). ``PlanningEngine`` is aliased
 # because the legacy ``core.planner.PlanningEngine`` above keeps its name.
+from core.execution_failure import normalize_execution_failure
 from core.execution_planner import ExecutionPlanner
 from core.goal_manager import GoalManager
 from core.lifecycle_reflection import reflect_execution_completed, reflect_execution_started
@@ -999,6 +1000,7 @@ class Agent:
         *,
         project: str | None,
         reflect_steps: bool = False,
+        dispatched: list[ToolDispatchDecision] | None = None,
     ) -> tuple[PipelineRun, tuple[ToolDispatchDecision, ...], tuple[ToolResult, ...]]:
         """v8.23 run body (extracted unchanged in v8.25 so the lifecycle-aware
         path can reuse it): ``create_run`` (CREATED) -> stage decisions ->
@@ -1011,7 +1013,11 @@ class Agent:
         before routing, COMPLETED after success; skipped -> ARCHIVED. On a
         failure nothing more is written (the failing step stays ACTIVE,
         unreached steps stay DRAFT). Off by default, so v8.23 / v8.24 leave
-        steps untouched."""
+        steps untouched.
+
+        ``dispatched`` (v8.28, caller-owned, set only by the v8.24 path)
+        receives each dispatched decision just before it is routed, so the
+        caller can name the failed stage; it changes nothing else."""
         pipeline = self._pipeline_engine.get_pipeline(projection.pipeline_id)
         if pipeline is None:
             raise KeyError(projection.pipeline_id)
@@ -1036,6 +1042,8 @@ class Agent:
         try:
             for decision in decisions:
                 if decision.would_dispatch:
+                    if dispatched is not None:
+                        dispatched.append(decision)
                     if reflect_steps:
                         reflect_step_reached(plan_id, decision.task_id, planning_engine=engine)
                     request = ToolRequest(
@@ -1070,14 +1078,26 @@ class Agent:
         a time over each dispatched decision paired positionally with its
         ``ToolResult``; the learning metadata additionally records the
         ``run_id`` now that a ``PipelineRun`` exists. Skipped stages
-        produce no write; if a tool raises, the run is already FAILED and
-        the exception has propagated before any write. Returns the v8.23
-        4-tuple unchanged. No Goal/Plan status transitions, no per-stage
-        status, no legacy call.
+        produce no write. Returns the v8.23 4-tuple unchanged. No Goal/Plan
+        status transitions, no per-stage status, no legacy call.
+
+        v8.28: runs the same v8.23 body (``project_request`` +
+        ``_run_projected_pipeline``) directly so the failed stage is known;
+        a failed execution attempt (FAILED run) gets exactly one structured
+        failure writeback (``_record_failure_outcome``, the failed stage
+        being the last dispatched one) and the original exception is
+        re-raised unchanged. No success record is written for a failed
+        attempt.
         """
-        projection, run, decisions, results = self.execute_projection_with_run_status(
-            goal, project=project
-        )
+        _plan, projection = self.project_request(goal)
+        dispatched: list[ToolDispatchDecision] = []
+        try:
+            run, decisions, results = self._run_projected_pipeline(
+                projection, project=project, dispatched=dispatched
+            )
+        except BaseException as exc:
+            self._record_failure_outcome(projection, exc, project=project, dispatched=dispatched)
+            raise
         self._record_tool_outcomes(decisions, results, run=run, project=project)
         return projection, run, decisions, results
 
@@ -1134,20 +1154,24 @@ class Agent:
         exc: BaseException,
         *,
         project: str | None,
+        dispatched: list[ToolDispatchDecision] | None = None,
     ) -> None:
-        """v8.27 failure writeback: exactly one structured record per failed
-        execution attempt, through the existing Memory -> Reflection ->
-        Learning APIs (``record_outcome`` with a non-success outcome,
+        """Shared failure writeback (v8.27; v8.28 shared with the v8.24
+        path): exactly one structured record per failed execution attempt,
+        through the existing Memory -> Reflection -> Learning APIs
+        (``record_outcome`` with a non-success outcome,
         ``add_reflection(what_failed=...)``, ``record_failed_pattern``).
 
         Derived only from authoritative state: the attempt counts as an
         *execution* failure only if this projection's pipeline has a FAILED
         ``PipelineRun`` (a failure before the run reached RUNNING is not an
-        execution failure and writes nothing); the failed stage is the one
-        ACTIVE step (v8.26), when there is one. Only structured data is
-        written — the exception's type name and record references — never
-        its message, repr, traceback or tool arguments. Any exception raised
-        while writing is suppressed so it can never mask the original
+        execution failure and writes nothing). The failed stage is, with
+        ``dispatched=None`` (lifecycle path), the one ACTIVE step (v8.26),
+        when there is one; with a ``dispatched`` log (v8.24 path, no step
+        reflection), its last decision, when there is one. The exception is
+        reduced to a v8.28 ``ExecutionFailure`` (type name only) — its
+        message, repr, args and traceback are never written. Any exception
+        raised while writing is suppressed so it can never mask the original
         execution exception (writes are not atomic: earlier layers may
         remain written). Changes no status.
         """
@@ -1159,41 +1183,49 @@ class Agent:
             if not failed_runs:
                 return
             run = failed_runs[-1]
-            plan = self._planning_engine.get_plan(projection.plan_id)
-            active = [s for s in (plan.steps if plan else ()) if s.status is PlanStatus.ACTIVE]
-            step = active[0] if len(active) == 1 else None
+            if dispatched is None:
+                plan = self._planning_engine.get_plan(projection.plan_id)
+                active = [s for s in (plan.steps if plan else ()) if s.status is PlanStatus.ACTIVE]
+                step = active[0] if len(active) == 1 else None
+                task_id = step.id if step is not None else None
+                stage = step.title if step is not None else None
+            else:
+                last = dispatched[-1] if dispatched else None
+                task_id = last.task_id if last is not None else None
+                stage = last.tool_name if last is not None else None
             goal_title = self._goal_manager.get_goal(projection.goal_id).title
-            exception_type = type(exc).__name__
-            stage = step.title if step is not None else None
+            failure = normalize_execution_failure(
+                exc, run_id=run.id, tool_name=stage, project=project
+            )
             metadata = {
-                "run_id": run.id,
+                "run_id": failure.run_id,
                 "goal_id": projection.goal_id,
                 "plan_id": projection.plan_id,
-                "task_id": step.id if step is not None else None,
-                "project": project,
-                "exception_type": exception_type,
+                "task_id": task_id,
+                "project": failure.project,
+                "exception_type": failure.exception_type,
             }
             record_problem_outcome(
-                problem=stage or goal_title,
+                problem=failure.tool_name or goal_title,
                 cause="controlled_tool_dispatch_failure",
-                solution=stage or "",
-                outcome=f"failed:{exception_type}",
-                project=project,
+                solution=failure.tool_name or "",
+                outcome=f"failed:{failure.exception_type}",
+                project=failure.project,
             )
             self.reflection.add_reflection(
-                subject=step.id if step is not None else projection.goal_id,
-                what_failed=f"controlled_tool_dispatch:{stage or 'unknown stage'}",
+                subject=task_id if task_id is not None else projection.goal_id,
+                what_failed=f"controlled_tool_dispatch:{failure.tool_name or 'unknown stage'}",
                 completion_summary=(
-                    f"Execution attempt failed ({exception_type}) under "
+                    f"Execution attempt failed ({failure.exception_type}) under "
                     f"controlled tool dispatch."
                 ),
                 confidence_level=0.0,
                 metadata=dict(metadata),
             )
             self.learning.record_failed_pattern(
-                subject=stage or goal_title,
+                subject=failure.tool_name or goal_title,
                 detail=(
-                    f"Execution attempt failed ({exception_type}) under "
+                    f"Execution attempt failed ({failure.exception_type}) under "
                     f"controlled tool dispatch."
                 ),
                 metadata=dict(metadata),

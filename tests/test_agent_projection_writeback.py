@@ -72,14 +72,23 @@ class TestContract:
         p2, r2, d2, t2 = b.execute_projection_with_run_status("fix the wifi")
         assert (d1, t1, r1.status) == (d2, t2, r2.status)
 
-    def test_delegates_to_run_status_method(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_runs_the_v8_23_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # v8.28: v8.24 runs the v8.23 body (``project_request`` + the shared
+        # ``_run_projected_pipeline``) directly instead of through the public
+        # v8.23 method, so the failed stage is known for failure writeback.
+        # Pinned: exactly one projection and one shared run per call, and
+        # results identical to the v8.23 method for the same inputs.
         a = agent_with("fix the wifi")
         calls: list[str] = []
-        original = a.execute_projection_with_run_status
-        monkeypatch.setattr(a, "execute_projection_with_run_status",
-                            lambda goal, *, project=None: calls.append(goal) or original(goal, project=project))
+        for name in ("project_request", "_run_projected_pipeline"):
+            original = getattr(a, name)
+            monkeypatch.setattr(a, name, lambda *x, _o=original, _n=name, **k: calls.append(_n) or _o(*x, **k))
         a.execute_projection_with_writeback("fix the wifi")
-        assert calls == ["fix the wifi"]
+        assert calls == ["project_request", "_run_projected_pipeline"]
+        b, c = agent_with("step one", "step two"), agent_with("step one", "step two")
+        _, r1, d1, t1 = b.execute_projection_with_writeback("step one then step two", project="p")
+        _, r2, d2, t2 = c.execute_projection_with_run_status("step one then step two", project="p")
+        assert (d1, t1, r1.status, set(r1.metadata)) == (d2, t2, r2.status, set(r2.metadata))
 
 
 class TestWrites:
@@ -146,13 +155,18 @@ class TestNoWrites:
         assert run.status is PipelineRunStatus.COMPLETED
         assert stub_remember == [] and a.reflection_engine.count() == 0 and a.learning.get_all() == []
 
-    def test_failure_writes_nothing_and_run_failed(self, stub_remember: list) -> None:
+    def test_failure_writes_one_failure_record_and_run_failed(self, stub_remember: list) -> None:
+        # v8.28 (owner-authorized expansion): a failed attempt now writes
+        # exactly one structured failure record per layer and still no
+        # success record (full contract: tests/test_failure_writeback_v8_24.py).
         a = Agent()
         a.tool_registry.register(StaticMockTool(name="step one"))
         a.tool_registry.register(Failing("step two"))
         with pytest.raises(RuntimeError):
             a.execute_projection_with_writeback("step one then step two")
-        assert stub_remember == [] and a.reflection_engine.count() == 0 and a.learning.get_all() == []
+        assert len(stub_remember) == 1 and stub_remember[0][0][2].startswith("FAILED |")
+        assert a.reflection_engine.count() == 1
+        assert [r.category for r in a.learning.get_all()] == ["failed_pattern"]
         assert a.pipeline_run_manager.list_runs()[0].status is PipelineRunStatus.FAILED
 
     def test_tool_error_propagates(self) -> None:
@@ -221,7 +235,21 @@ class TestArchitecture:
         node = _method_node()
         calls = {c.func.id if isinstance(c.func, ast.Name) else getattr(c.func, "attr", None)
                  for c in ast.walk(node) if isinstance(c, ast.Call)}
-        assert calls == {"execute_projection_with_run_status", "_record_tool_outcomes"}
+        # v8.28: the v8.23 body is run directly (see test_runs_the_v8_23_body).
+        assert calls == {"project_request", "_run_projected_pipeline",
+                         "_record_failure_outcome", "_record_tool_outcomes"}
+        # v8.28: exactly one handler -- around the run only -- performing the
+        # failure writeback and re-raising the original exception unchanged.
+        (h,) = [x for x in ast.walk(node) if isinstance(x, ast.ExceptHandler)]
+        assert isinstance(h.type, ast.Name) and h.type.id == "BaseException"
+        raises = [x for x in ast.walk(h) if isinstance(x, ast.Raise)]
+        assert len(raises) == 1 and raises[0].exc is None
+        assert {getattr(c.func, "attr", None) for c in ast.walk(h) if isinstance(c, ast.Call)} == {
+            "_record_failure_outcome"}
+        (t,) = [x for x in ast.walk(node) if isinstance(x, ast.Try)]
+        assert {getattr(c.func, "attr", None) for s in t.body for c in ast.walk(s)
+                if isinstance(c, ast.Call)} == {"_run_projected_pipeline"}
+        assert not t.finalbody and not t.orelse
         with open(AGENT_FILE, encoding="utf-8") as f:
             tree = ast.parse(f.read())
         helper = next(n for n in ast.walk(tree)
@@ -234,15 +262,15 @@ class TestArchitecture:
             attrs = {a.attr for a in ast.walk(n) if isinstance(a, ast.Attribute)}
             assert not attrs & {"_tool_router", "_tool_registry", "route", "update_run", "create_run",
                                 "update_goal", "update_plan"}
-            for x in ast.walk(n):
-                assert not isinstance(x, (ast.Try, ast.ExceptHandler))
+        for x in ast.walk(helper):
+            assert not isinstance(x, (ast.Try, ast.ExceptHandler))
 
     def test_no_new_agent_imports(self) -> None:
         with open(AGENT_FILE, encoding="utf-8") as f:
             tree = ast.parse(f.read())
         modules = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
         assert "core.stage_dispatch" in modules and "core.plan_projection" in modules
-        assert len([m for m in modules if m.startswith("core.")]) == 36  # v8.24: 34; v8.25 added core.lifecycle_reflection; v8.26 core.step_lifecycle
+        assert len([m for m in modules if m.startswith("core.")]) == 37  # v8.24: 34; v8.25 added core.lifecycle_reflection; v8.26 core.step_lifecycle; v8.28 core.execution_failure
 
     def test_all_unchanged(self) -> None:
         assert len(agent_module.__all__) == 16

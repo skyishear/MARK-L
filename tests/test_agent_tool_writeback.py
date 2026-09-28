@@ -436,6 +436,7 @@ class TestArchitecture:
             "core.task_graph", "core.tool_dispatch", "core.tool_interface",
             "core.plan_projection", "core.stage_dispatch", "core.lifecycle_reflection",
             "core.step_lifecycle",
+            "core.execution_failure",
             "core.tool_registry", "core.tool_router",
         }
 

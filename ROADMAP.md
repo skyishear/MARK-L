@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.27 complete** · Active milestone: **none** · Next discovered: **none — STOP recorded below (discovery after v8.27)**
-> Verified suite at checkpoint: **1879 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.28 complete** · Active milestone: **none** · Next planned: **v8.29 Failure Writeback on the Tool-Chain Path (v8.20) — NOT STARTED**
+> Verified suite at checkpoint: **1929 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -35,6 +35,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.25 goal/plan lifecycle reflection | ✅ Complete |
 | v8.26 step lifecycle reflection | ✅ Complete |
 | v8.27 execution failure writeback | ✅ Complete |
+| v8.28 failure writeback expansion (v8.24) + shared failure normalization | ✅ Complete |
+| v8.29–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -202,6 +204,32 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   exactly one BaseException handler (bare re-raise, calls only
   `_record_failure_outcome`) around `_run_projected_pipeline` only.
   Verified: 37 new focused, full suite 1879.
+- v8.28 Failure Writeback Expansion (v8.24) + Shared Failure Normalization —
+  new stdlib-only leaf `core/execution_failure.py`: frozen/slots
+  `ExecutionFailure(exception_type, run_id, tool_name, project)` and
+  `normalize_execution_failure(exc, *, run_id, tool_name=None, project=None)`
+  (reads only `type(exc).__name__`; never message/repr/args/traceback, never
+  keeps the exception). `Agent._record_failure_outcome` is now the single
+  shared failure writer (lifecycle and v8.24) built on it; v8.27 records are
+  unchanged (same content, key order and ACTIVE-step/goal fallback — v8.27
+  content tests pass unmodified). `execute_projection_with_writeback` now
+  runs the v8.23 body directly (`project_request` + `_run_projected_pipeline`
+  with a caller-owned `dispatched` log, identical results to v8.23) inside
+  one `try/except BaseException`: a FAILED run gets exactly one structured
+  failure writeback (Memory → Reflection → Learning; failed stage = last
+  dispatched decision) and the original exception is re-raised unchanged;
+  writeback errors never mask it. As before, a failed attempt writes **no
+  success record** for stages that succeeded earlier (success writeback runs
+  only for a COMPLETED run); later stages are never dispatched or recorded;
+  pre-RUNNING / projection failures write nothing. v8.20 / v8.22 / v8.23,
+  statuses, stores, tool stack and providers unchanged. Sanctioned test
+  updates: Agent import allowlists (+`core.execution_failure`); v8.24
+  `test_failure_writes_nothing_and_run_failed` → one failure record (owner
+  authorization); v8.24 delegation/call-set pins retargeted to the v8.23 body
+  with a results-equivalence check; three v8.27 guards retargeted (v8.24 now
+  a sanctioned caller; `exc` only passed to the normalizer, whose type-name-
+  only read is pinned in `tests/test_execution_failure.py`). Verified: 50 new
+  focused, full suite 1929.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -210,14 +238,16 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.27 — Execution Failure Writeback: COMPLETE.**
+**v8.28 — Failure Writeback Expansion (v8.24) + Shared Failure Normalization: COMPLETE.**
 
-- Full suite: 1879 passed, 0 failed, 0 errors, 0 skipped.
-- Frozen legacy modules: zero diff; every v8.x store, leaf and tool module,
-  `core/problem_solver.py`, `core/memory_engine.py` and the reflection /
-  learning managers unchanged (only `core/agent/__init__.py`).
-- The Foundation-native lifecycle path now writes back both successful and
-  failed execution attempts; retry / resume remain out of scope.
+- Full suite: 1929 passed, 0 failed, 0 errors, 0 skipped.
+- Frozen legacy modules: zero diff; every v8.x store, leaf, tool, provider
+  and memory/reflection/learning module unchanged (only
+  `core/agent/__init__.py` and the new leaf `core/execution_failure.py`).
+- Failure writeback now covers the lifecycle (v8.27) and projection-writeback
+  (v8.24) paths through one writer; v8.20 is next (v8.29). Retry / resume,
+  context management and tool calling remain deferred to their planned
+  milestones.
 
 ---
 
@@ -590,6 +620,38 @@ Candidates examined against §25.1:
 area (e.g. retry/resume architecture, or a consumer for recorded failure
 memory on the Foundation path) — none is derivable from repository
 evidence alone.*
+
+_Resolution (project owner, after the v8.27 read-only planning audit): all
+four areas authorized — (1) advanced context management, (2) AI-initiated
+tool calling (§9), (3) retry / resume, (4) failure writeback expansion to
+v8.20 / v8.24. Approved sequence (each milestone still requires its own
+contract audit and gates; mechanisms ship disabled until their policy
+decisions are recorded): v8.28 writeback on v8.24 + shared normalization
+(complete) → v8.29 writeback on v8.20 → v8.30 failure category /
+transient-error taxonomy → v8.31 tool catalog (declarations, argument
+schemas, safety flags; `ToolInterface` untouched) → v8.32 resume a failed
+lifecycle run → v8.33 bounded in-run retry → v8.34 context policy and
+trimming → v8.35 token budgeting → v8.36 system channel and memory
+injection → v8.37 neutral tool-calling types → v8.38 first provider
+normalization → v8.39 tool runtime loop → v8.40+ remaining providers.
+Open owner decisions recorded with the plan (needed only before their
+milestone): side-effecting tool confirmation, tool-error disclosure to
+providers, `sensitive` memory handling, resume of non-idempotent stages,
+policy values, ARCHIVED-stage resume, prior-attempt success records,
+first provider, tool-call auditing, token-count method, v8/v9 numbering._
+
+### v8.29 — Failure Writeback on the Tool-Chain Path (v8.20) — **NOT STARTED**
+
+**Objective.** Give a failed `execute_request_with_tool_dispatch_writeback`
+attempt exactly one structured failure writeback through the shared v8.28
+writer. **Justification.** Authorized area (4); the last path whose
+contract still reads "no writes on failure". **Prerequisites.** v8.28
+`ExecutionFailure` and shared writer. **Boundary.** Behaviour-preserving
+extraction of the v8.19 dispatch loop (v8.25 precedent) to expose the failed
+decision; no `PipelineRun` exists on this path, so no attempt identity is
+invented. **Exclusions.** No change to v8.19 results, the legacy chain,
+v8.22 / v8.23, statuses or the tool stack. **Verification.** Mirror of the
+v8.28 suite for v8.20; v8.19 results identical; full suite; gates A–D.
 
 ---
 
