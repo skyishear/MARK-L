@@ -32,7 +32,7 @@ from core.execution_orchestrator import ExecutionOrchestrator
 from core.execution_pipeline import ExecutionPipeline
 from core.execution_result import ExecutionResult, build_result_from_session
 from core.execution_session import ExecutionSession, create_session
-from core.planner import ExecutionPlan, Goal, PlanningEngine
+from core.planner import ExecutionPlan, Goal, InvalidGoalError, PlanningEngine, PlanValidationError
 from core.planner_execution_orchestrator_adapter import build_orchestrator_for_plan
 from core.problem_solver import gather_context, record_outcome as record_problem_outcome
 from core.skill_dispatch import SkillDispatchDecision, build_dispatch_decision
@@ -40,6 +40,7 @@ from core.skill_registry import dispatch as skill_dispatch, is_registered
 # v8.x Foundation stores (v8.10 bridge). ``PlanningEngine`` is aliased
 # because the legacy ``core.planner.PlanningEngine`` above keeps its name.
 from core.execution_failure import normalize_execution_failure
+from core.failure_taxonomy import FailureCategory, classify_failure
 from core.execution_planner import ExecutionPlanner
 from core.goal_manager import GoalManager
 from core.lifecycle_reflection import reflect_execution_completed, reflect_execution_started
@@ -54,7 +55,7 @@ from core.task_graph import TaskGraph
 from core.tool_dispatch import ToolDispatchDecision, build_tool_dispatch_decision
 from core.tool_interface import ToolRequest, ToolResult
 from core.tool_registry import ToolRegistry
-from core.tool_router import ToolRouter
+from core.tool_router import ToolNotFoundError, ToolRouter
 
 __all__ = [
     "Agent",
@@ -74,6 +75,25 @@ __all__ = [
     "ReflectionManager",
     "SkillDispatchDecision",
 ]
+
+
+def _classify_execution_failure(exc: BaseException) -> FailureCategory:
+    """Classify an execution failure by exception type only (v8.30).
+
+    The execution rule table is owned by the composition root (which
+    composes the planner and the tool router) and built per call, so the
+    module holds no state. Only exception types whose documented meaning
+    supports a category are listed; everything else — including
+    ``ToolError`` and generic Python exceptions — is UNKNOWN. No repository
+    exception is documented as transient, so nothing maps to TRANSIENT.
+    Classification never triggers retry or changes any behaviour.
+    """
+    rules: dict[type, FailureCategory] = {
+        ToolNotFoundError: FailureCategory.PERMANENT,  # "tool_name is not registered"
+        InvalidGoalError: FailureCategory.INVALID_INPUT,  # "goal cannot be planned"
+        PlanValidationError: FailureCategory.INVALID_INPUT,  # "task graph is invalid"
+    }
+    return classify_failure(exc, rules)
 
 
 def _default_execution_plan() -> ExecutionPlan:

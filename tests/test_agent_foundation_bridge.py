@@ -330,7 +330,8 @@ class TestImportArchitecture:
         v8_25_modules = {"core.lifecycle_reflection"}  # goal/plan lifecycle reflection
         v8_26_modules = {"core.step_lifecycle"}  # step lifecycle reflection
         v8_28_modules = {"core.execution_failure"}  # shared failure normalization
-        assert core_imports == allowed_legacy | V8_MODULES | v8_15_modules | v8_16_modules | v8_17_modules | v8_21_modules | v8_22_modules | v8_25_modules | v8_26_modules | v8_28_modules
+        v8_30_modules = {"core.failure_taxonomy"}  # execution failure taxonomy
+        assert core_imports == allowed_legacy | V8_MODULES | v8_15_modules | v8_16_modules | v8_17_modules | v8_21_modules | v8_22_modules | v8_25_modules | v8_26_modules | v8_28_modules | v8_30_modules
 
     def test_foundation_planning_engine_is_aliased(self) -> None:
         aliases = {

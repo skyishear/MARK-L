@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.29 complete** · Active milestone: **none** · Next planned: **v8.30 Failure Category / Transient-Error Taxonomy — NOT STARTED**
-> Verified suite at checkpoint: **1965 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.30 complete** · Active milestone: **none** · Next planned: **v8.31 Tool Catalog — NOT STARTED**
+> Verified suite at checkpoint: **2019 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -37,7 +37,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.27 execution failure writeback | ✅ Complete |
 | v8.28 failure writeback expansion (v8.24) + shared failure normalization | ✅ Complete |
 | v8.29 tool-chain failure writeback (v8.20) | ✅ Complete |
-| v8.30–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
+| v8.30 execution failure taxonomy | ✅ Complete |
+| v8.31–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -257,6 +258,31 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   tool-bridge router allowlist retargeted to `_run_tool_dispatch_chain`;
   v8.28 guards updated (`run_id=None` now valid; v8.20 an allowed writer).
   Verified: 36 new focused, full suite 1965.
+- v8.30 Execution Failure Taxonomy — new stdlib-only leaf
+  `core/failure_taxonomy.py`: `FailureCategory(str, Enum)` with stable values
+  `TRANSIENT="transient"`, `PERMANENT="permanent"`,
+  `INVALID_INPUT="invalid_input"`, `UNKNOWN="unknown"`, and pure
+  `classify_failure(exc, rules)` — classification by **exception class
+  only** (MRO, most specific first) against caller-supplied rules; never
+  reads message / repr / args / traceback, stores nothing, unmatched →
+  `UNKNOWN`. **TRANSIENT means "potentially temporary according to the
+  classifier" — not "retry", "safe to retry", "idempotent" or
+  "side-effect free".** The execution rule table is owned by the composition
+  root (private `core.agent._classify_execution_failure`, built per call —
+  the v8.15 "no module-level state" pin and the v8.14 "no core module
+  imports the router" boundary are both respected): `ToolNotFoundError` →
+  PERMANENT, `InvalidGoalError` / `PlanValidationError` → INVALID_INPUT;
+  everything else — including `ToolError` (no structured category) and all
+  generic Python exceptions (incl. `TimeoutError`, `ConnectionError`) — →
+  UNKNOWN. **No repository exception is documented as transient, so nothing
+  maps to TRANSIENT** (limitation; the plan's `TransientToolError` was not
+  introduced — the owner's v8.30 contract forbids inventing exception classes
+  solely to create TRANSIENT cases; a transient signal remains a future
+  decision). Foundation only: no execution path calls the classifier; no
+  retry, no resume, `ExecutionFailure` and all v8.27 / v8.28 / v8.29 failure
+  records unchanged, exception propagation, tool stack, stores, statuses and
+  providers unchanged. Sanctioned test updates: Agent import allowlists
+  (+`core.failure_taxonomy`). Verified: 54 new focused, full suite 2019.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -265,16 +291,17 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.29 — Tool-Chain Failure Writeback (v8.20): COMPLETE.**
+**v8.30 — Execution Failure Taxonomy: COMPLETE.**
 
-- Full suite: 1965 passed, 0 failed, 0 errors, 0 skipped.
+- Full suite: 2019 passed, 0 failed, 0 errors, 0 skipped.
 - Frozen legacy modules: zero diff; every v8.x store, leaf, tool, provider
   and memory/reflection/learning module unchanged (only
-  `core/agent/__init__.py` and the v8.28 leaf `core/execution_failure.py`).
-- Failure writeback (area 4) is complete: lifecycle (v8.27), projection
-  writeback (v8.24) and tool chain (v8.20) share one writer; v8.19, v8.22
-  and v8.23 still write nothing. v8.30 is next; retry / resume, context
-  management and tool calling remain deferred to their planned milestones.
+  `core/agent/__init__.py` and the new leaf `core/failure_taxonomy.py`).
+- A provider-neutral failure classification foundation exists for the
+  planned retry (v8.33) and tool-error feedback (v8.39) consumers; nothing
+  consumes it yet and no behaviour changed. v8.31 is next; retry / resume,
+  context management and tool calling remain deferred to their planned
+  milestones.
 
 ---
 
@@ -667,12 +694,17 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.30 — Failure Category / Transient-Error Taxonomy — **NOT STARTED**
+### v8.31 — Tool Catalog — **NOT STARTED**
 
-Per the owner-authorized plan above: an `ExecutionFailure` category derived only
-from the exception class, a `TransientToolError(ToolError)` subclass and a fixed
-per-category description (never exception text); prerequisite for v8.33 retry and
-v8.39 tool-error feedback. Contract audit required before implementation.
+Per the owner-authorized plan above: per-tool declarations, argument schemas and
+safety flags held beside the registry (`ToolInterface` untouched), most
+restrictive defaults. Contract audit required before implementation. Open input
+from v8.30: how a tool signals a *transient* failure (no such signal exists yet).
+
+### v8.30 — Failure Category / Transient-Error Taxonomy — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+Implemented as a separate leaf taxonomy with Agent-owned rules; `ExecutionFailure`
+unchanged; no `TransientToolError` (see history).
 
 ### v8.29 — Failure Writeback on the Tool-Chain Path (v8.20) — **COMPLETE** (moved to history above; kept here as the discovery record)
 

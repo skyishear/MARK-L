@@ -464,6 +464,7 @@ class TestArchitecture:
             "core.plan_projection", "core.stage_dispatch", "core.lifecycle_reflection",
             "core.step_lifecycle",
             "core.execution_failure",
+            "core.failure_taxonomy",
             "core.tool_registry", "core.tool_router",
         }
 
