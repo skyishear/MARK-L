@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.33 complete** · Active milestone: **none** · Next planned: **v8.34 Context Policy and History Trimming — NOT STARTED**
-> Verified suite at checkpoint: **2185 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.34 complete** · Active milestone: **none** · Next planned: **v8.35 Token Budgeting — NOT STARTED**
+> Verified suite at checkpoint: **2225 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -41,7 +41,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.31 tool catalog (metadata + schema validation) | ✅ Complete |
 | v8.32 resume a failed lifecycle run | ✅ Complete |
 | v8.33 bounded in-run retry | ✅ Complete |
-| v8.34–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
+| v8.34 context policy and history trimming | ✅ Complete |
+| v8.35–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -380,6 +381,30 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   "execution never classifies" → only the lifecycle path classifies);
   "no retry surface" guards (+ the one retry helper). Verified: 51 new
   focused, full suite 2185.
+- v8.34 Context Policy and History Trimming — `core/context_manager.py`
+  only (the v7.6 `ContextManager`, the documented owner of context
+  shaping, `docs/TECHNICAL_DEBT.md` §2 / §6). **Locked owner policy:**
+  **50 messages / 20,000 content characters**, **enabled by default**
+  (`ContextManager(*, max_messages=50, max_chars=20_000)`, keyword-only,
+  zero-arg compatible; the default `AIService` — hence `Agent.ask` /
+  `Agent.reason` — gets the bounded view with no configuration);
+  characters are `len(Message.content)` only (no roles / structure) and the
+  request's new `prompt` is not counted; a history within both limits is
+  returned unchanged; otherwise **complete user/assistant pairs** (or single
+  messages that do not form a pair, e.g. a trailing incomplete user turn)
+  are dropped oldest-first, the view never deliberately begins with an
+  orphan `assistant` message, and retained messages keep their order,
+  identity and content; an **oversized newest message raises the dedicated
+  `ContextValidationError(ValueError)`** (sizes only in the message, never
+  content) — no truncation, no silent drop, never over budget. Derived
+  rule for cases the policy leaves implicit: a newest complete pair that
+  cannot fit, or a newest orphan assistant message, raises the same error.
+  **Canonical history is preserved:** `ConversationHistory` stays the
+  source of truth and is never mutated; `prepare()` returns a bounded
+  derived view. **Token budgeting is deferred to v8.35** — no token
+  counting, tokenizer or budget abstraction here; no provider, `AIService`,
+  Agent, tool or execution change. No existing test changed. Verified: 40
+  new focused, full suite 2225.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -388,17 +413,16 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.33 — Bounded In-Run Retry: COMPLETE.**
+**v8.34 — Context Policy and History Trimming: COMPLETE.**
 
-- Full suite: 2185 passed, 0 failed, 0 errors, 0 skipped.
-- Frozen legacy modules: zero diff; production changes only in
-  `core/agent/__init__.py` and the additive `TransientToolError` in
-  `core/tool_interface.py` (router, registry, catalog, taxonomy, stores,
-  providers and memory/reflection/learning unchanged).
-- Retry / resume (area 3) is complete: the lifecycle path retries
-  tool-declared transient failures under O5 and FAILED attempts can be
-  resumed under O4 / O6 / O7. Context management and tool calling remain
-  deferred to their planned milestones.
+- Full suite: 2225 passed, 0 failed, 0 errors, 0 skipped.
+- Frozen legacy modules: zero diff; the only production change is
+  `core/context_manager.py` (providers, `AIService`, Agent, tools and
+  execution unchanged).
+- Provider context is now bounded by default (50 messages / 20,000 content
+  characters, complete-pair trimming) while the canonical history stays
+  intact. Token budgeting (v8.35), the system channel / memory injection
+  (v8.36) and tool calling remain deferred to their planned milestones.
 
 ---
 
@@ -791,11 +815,18 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.34 — Context Policy and History Trimming — **NOT STARTED**
+### v8.35 — Token Budgeting — **NOT STARTED**
 
 Per the owner-authorized plan above. Contract audit required before
-implementation; open input: the policy values (O5 context part: message /
-character limits).
+implementation; open inputs: the token-count method (O10) and the token limit
+value.
+
+### v8.34 — Context Policy and History Trimming — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+Owner policy locked before implementation: 50 messages / 20,000 content
+characters (prompt not counted) / complete-pair trimming, no orphan leading
+assistant message / oversized newest message raises a dedicated validation
+error / enabled by default / canonical history preserved (derived view only).
 
 ### v8.33 — Bounded In-Run Retry — **COMPLETE** (moved to history above; kept here as the discovery record)
 
