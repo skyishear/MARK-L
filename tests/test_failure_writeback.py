@@ -413,15 +413,17 @@ class TestArchitecture:
         assert isinstance(h.type, ast.Name) and h.type.id == "Exception"
         assert not [n for n in ast.walk(h) if isinstance(n, ast.Raise)]
 
-    def test_only_lifecycle_and_v8_24_methods_write_failures(self) -> None:
-        # v8.28 extended failure writeback to the v8.24 path (owner-authorized).
+    def test_only_lifecycle_v8_24_and_v8_20_methods_write_failures(self) -> None:
+        # v8.28 / v8.29 extended failure writeback to the v8.24 and v8.20
+        # paths (owner-authorized).
         callers = set()
         for fn in ast.walk(_agent_tree()):
             if isinstance(fn, ast.FunctionDef):
                 for c in ast.walk(fn):
                     if isinstance(c, ast.Call) and getattr(c.func, "attr", None) == "_record_failure_outcome":
                         callers.add(fn.name)
-        assert callers == {"execute_projection_with_lifecycle", "execute_projection_with_writeback"}
+        assert callers == {"execute_projection_with_lifecycle", "execute_projection_with_writeback",
+                           "execute_request_with_tool_dispatch_writeback"}
 
     def test_no_new_module_or_public_api(self) -> None:
         assert len(agent_module.__all__) == 16

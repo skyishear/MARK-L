@@ -93,7 +93,12 @@ class TestNormalize:
         assert not {"args", "__traceback__", "__str__", "__repr__", "with_traceback", "__cause__",
                     "__context__"} & attrs
 
-    @pytest.mark.parametrize("run_id", ["", "   ", None, 3])
+    def test_run_id_none_allowed(self) -> None:
+        # v8.29: paths without a PipelineRun (the v8.20 tool chain) pass None.
+        assert normalize_execution_failure(RuntimeError(), run_id=None) == ExecutionFailure(
+            "RuntimeError", None, None, None)
+
+    @pytest.mark.parametrize("run_id", ["", "   ", 3])
     def test_invalid_run_id(self, run_id: object) -> None:
         with pytest.raises(ValueError):
             normalize_execution_failure(RuntimeError(), run_id=run_id)  # type: ignore[arg-type]

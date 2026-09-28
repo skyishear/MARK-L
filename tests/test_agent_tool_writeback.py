@@ -101,16 +101,20 @@ class TestContract:
         r2, d2, t2 = b.execute_request_with_tool_dispatch("fix the wifi")
         assert (r1.session_id, d1, t1) == (r2.session_id, d2, t2)
 
-    def test_delegates_to_tool_dispatch_chain(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_runs_the_v8_19_chain_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # v8.29: v8.20 runs the v8.19 body (the shared ``_run_tool_dispatch_chain``)
+        # directly instead of through the public v8.19 method, so the failed
+        # stage is observable. Pinned: exactly one chain run per call, and
+        # results identical to the v8.19 method (checked just above).
         a = agent_with_tool()
         calls: list[str] = []
-        original = a.execute_request_with_tool_dispatch
+        original = a._run_tool_dispatch_chain  # noqa: SLF001
 
-        def spy(goal, *, project=None, metadata=None):
+        def spy(goal, *, project=None, metadata=None, routing=None):
             calls.append(goal)
-            return original(goal, project=project, metadata=metadata)
+            return original(goal, project=project, metadata=metadata, routing=routing)
 
-        monkeypatch.setattr(a, "execute_request_with_tool_dispatch", spy)
+        monkeypatch.setattr(a, "_run_tool_dispatch_chain", spy)
         a.execute_request_with_tool_dispatch_writeback("fix the wifi")
         assert calls == ["fix the wifi"]
 
@@ -137,12 +141,14 @@ class TestMemoryWriteback:
         Agent().execute_request_with_tool_dispatch_writeback("fix the wifi")
         assert stub_remember == []
 
-    def test_failed_performs_no_write(self, stub_remember: list) -> None:
+    def test_failed_performs_one_failure_write(self, stub_remember: list) -> None:
+        # v8.29 (owner-authorized): a failed attempt writes exactly one structured
+        # failure record per layer and still no success record.
         a = Agent()
         a.tool_registry.register(Failing("fix the wifi"))
         with pytest.raises(RuntimeError):
             a.execute_request_with_tool_dispatch_writeback("fix the wifi")
-        assert stub_remember == []
+        assert len(stub_remember) == 1 and stub_remember[0][0][2].startswith("FAILED |")
 
     def test_write_lands_in_agent_memory_engine(self) -> None:
         a = agent_with_tool()
@@ -182,12 +188,15 @@ class TestReflection:
         a.execute_request_with_tool_dispatch_writeback("fix the wifi")
         assert a.reflection_engine.count() == 0
 
-    def test_failed_creates_no_reflection(self) -> None:
+    def test_failed_creates_one_failure_reflection(self) -> None:
+        # v8.29 (owner-authorized): a failed attempt writes exactly one structured
+        # failure record per layer and still no success record.
         a = Agent()
         a.tool_registry.register(Failing("fix the wifi"))
         with pytest.raises(RuntimeError):
             a.execute_request_with_tool_dispatch_writeback("fix the wifi")
-        assert a.reflection_engine.count() == 0
+        (ref,) = a.reflection.get_all()
+        assert ref.what_failed and not ref.what_worked and ref.confidence_level == 0.0
 
     def test_reflection_after_memory_writeback(self, monkeypatch: pytest.MonkeyPatch) -> None:
         order: list[str] = []
@@ -223,12 +232,14 @@ class TestLearning:
         a.execute_request_with_tool_dispatch_writeback("fix the wifi")
         assert a.learning.get_all() == []
 
-    def test_failed_produces_no_learning(self) -> None:
+    def test_failed_produces_one_failed_pattern(self) -> None:
+        # v8.29 (owner-authorized): a failed attempt writes exactly one structured
+        # failure record per layer and still no success record.
         a = Agent()
         a.tool_registry.register(Failing("fix the wifi"))
         with pytest.raises(RuntimeError):
             a.execute_request_with_tool_dispatch_writeback("fix the wifi")
-        assert a.learning.get_all() == []
+        assert [r.category for r in a.learning.get_all()] == ["failed_pattern"]
 
     def test_learning_after_reflection(self, monkeypatch: pytest.MonkeyPatch) -> None:
         order: list[str] = []
@@ -291,16 +302,20 @@ class TestLayering:
         a.execute_request_with_tool_dispatch_writeback("g")
         assert order == ["route:one", "route:two", "memory", "memory"]
 
-    def test_failure_mid_chain_writes_nothing(self, monkeypatch: pytest.MonkeyPatch, stub_remember: list) -> None:
+    def test_failure_mid_chain_writes_only_the_failure(self, monkeypatch: pytest.MonkeyPatch, stub_remember: list) -> None:
+        # v8.29 (owner-authorized): a failed attempt writes exactly one structured
+        # failure record per layer and still no success record.
         a = Agent()
         a.tool_registry.register(StaticMockTool(name="one"))
         a.tool_registry.register(Failing("two"))
         force_ready(monkeypatch, a, "one", "two")
         with pytest.raises(RuntimeError):
             a.execute_request_with_tool_dispatch_writeback("g")
-        assert stub_remember == []
-        assert a.reflection_engine.count() == 0
-        assert a.learning.get_all() == []
+        assert [m[0][2] for m in stub_remember] == [
+            "FAILED | problem: two | cause: controlled_tool_dispatch_failure | solution: two"
+            " | outcome: failed:RuntimeError"]
+        assert a.reflection_engine.count() == 1
+        assert [(r.category, r.subject) for r in a.learning.get_all()] == [("failed_pattern", "two")]
 
     def test_tool_error_propagates_unchanged(self) -> None:
         class F:
@@ -406,15 +421,27 @@ class TestArchitecture:
         for c in ast.walk(node):
             if isinstance(c, ast.Call):
                 calls.add(c.func.id if isinstance(c.func, ast.Name) else getattr(c.func, "attr", None))
-        assert {"execute_request_with_tool_dispatch", "record_problem_outcome",
+        # v8.29: the v8.19 body is run through the shared helper, and the
+        # shared failure writer is the only other new call.
+        assert {"_run_tool_dispatch_chain", "_record_failure_outcome", "record_problem_outcome",
                 "add_reflection", "record_successful_pattern"} <= calls
         for forbidden in ("route", "get", "register", "skill_dispatch", "build_dispatch_decision",
                           "gather_context", "remember", "ToolRequest"):
             assert forbidden not in calls, forbidden
         attrs = {a.attr for a in ast.walk(node) if isinstance(a, ast.Attribute)}
         assert not attrs & {"_tool_router", "_tool_registry", "tool_router", "tool_registry"}
-        for n in ast.walk(node):
-            assert not isinstance(n, (ast.Try, ast.ExceptHandler))
+        # v8.29: exactly one handler -- around the chain only -- performing the
+        # failure writeback and re-raising the original exception unchanged.
+        (h,) = [n for n in ast.walk(node) if isinstance(n, ast.ExceptHandler)]
+        assert isinstance(h.type, ast.Name) and h.type.id == "BaseException"
+        raises = [n for n in ast.walk(h) if isinstance(n, ast.Raise)]
+        assert len(raises) == 1 and raises[0].exc is None
+        assert {getattr(c.func, "attr", None) for c in ast.walk(h) if isinstance(c, ast.Call)} == {
+            "_record_failure_outcome"}
+        (t,) = [n for n in ast.walk(node) if isinstance(n, ast.Try)]
+        assert {getattr(c.func, "attr", None) for s in t.body for c in ast.walk(s)
+                if isinstance(c, ast.Call)} == {"_run_tool_dispatch_chain"}
+        assert not t.finalbody and not t.orelse
 
     def test_no_new_imports_in_agent(self) -> None:
         with open(AGENT_FILE, encoding="utf-8") as f:

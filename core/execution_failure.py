@@ -5,8 +5,9 @@ shared by every execution path that writes failure evidence back
 (v8.27 lifecycle path, v8.28 projection-writeback path).
 
 Only structured data is kept: the exception's **type name**, the
-``PipelineRun`` id, the failed stage's tool name (when known) and the
-caller's project. The exception object itself, its message, repr, args
+``PipelineRun`` id (``None`` on a path without a run, e.g. the v8.20 tool
+chain — v8.29), the failed stage's tool name (when known) and the caller's
+project. The exception object itself, its message, repr, args
 and traceback are never read or stored — exception text may carry
 secrets, paths, user data or tool arguments.
 
@@ -31,7 +32,7 @@ class ExecutionFailure:
     """Immutable, sanitized description of one failed execution attempt."""
 
     exception_type: str
-    run_id: str
+    run_id: Optional[str]
     tool_name: Optional[str]
     project: Optional[str]
 
@@ -39,7 +40,7 @@ class ExecutionFailure:
 def normalize_execution_failure(
     exc: BaseException,
     *,
-    run_id: str,
+    run_id: Optional[str],
     tool_name: Optional[str] = None,
     project: Optional[str] = None,
 ) -> ExecutionFailure:
@@ -49,12 +50,12 @@ def normalize_execution_failure(
 
     Raises:
         TypeError: ``exc`` is not an exception instance.
-        ValueError: ``run_id`` is not a non-blank string.
+        ValueError: ``run_id`` is neither ``None`` nor a non-blank string.
     """
     if not isinstance(exc, BaseException):
         raise TypeError("exc must be an exception instance")
-    if not isinstance(run_id, str) or not run_id.strip():
-        raise ValueError("run_id must be a non-empty string")
+    if run_id is not None and (not isinstance(run_id, str) or not run_id.strip()):
+        raise ValueError("run_id must be None or a non-empty string")
     return ExecutionFailure(
         exception_type=type(exc).__name__,
         run_id=run_id,

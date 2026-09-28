@@ -296,12 +296,14 @@ class TestUnchanged:
             getattr(a, method)(THREE)
         assert memory == [] and a.reflection_engine.count() == 0 and a.learning.get_all() == []
 
-    def test_v8_20_unchanged_on_failure(self, monkeypatch: pytest.MonkeyPatch, memory: list) -> None:
-        # The legacy coordinator dispatches only ready tasks: fail the first one.
+    def test_v8_20_failure_is_a_single_v8_29_record(self, memory: list) -> None:
+        # v8.28 left v8.20 untouched; v8.29 gives it exactly one failure
+        # record (full contract: tests/test_failure_writeback_v8_20.py).
         a = agent_with(Failing("fix the wifi", ToolError("x")))
         with pytest.raises(ToolError):
             a.execute_request_with_tool_dispatch_writeback("fix the wifi")
-        assert memory == [] and a.reflection_engine.count() == 0 and a.learning.get_all() == []
+        assert len(memory) == 1 and a.reflection_engine.count() == 1
+        assert a.learning.get_all()[0].metadata["run_id"] is None
 
     def test_statuses_unchanged_by_v8_24_failure(self) -> None:
         a, _, _ = fail_step_two()

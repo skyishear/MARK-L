@@ -24,11 +24,11 @@ AGENT_FILE = os.path.join(ROOT, "core", "agent", "__init__.py")
 METHOD = "execute_request_with_tool_dispatch"
 
 
-def _method_node() -> ast.FunctionDef:
+def _method_node(name: str = METHOD) -> ast.FunctionDef:
     with open(AGENT_FILE, encoding="utf-8") as f:
         tree = ast.parse(f.read())
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == METHOD:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
             return node
     raise AssertionError("method not found")
 
@@ -275,7 +275,8 @@ class TestExecutionChain:
         assert len(first.received) == 1  # ran, but no partial tuple is returned
 
     def test_router_used_not_registry_directly(self) -> None:
-        node = _method_node()
+        # v8.29: the v8.19 body lives in ``_run_tool_dispatch_chain``.
+        node = _method_node("_run_tool_dispatch_chain")
         attrs = {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
         assert "route" in attrs
         assert not attrs & {"get", "invoke", "list_tools", "register", "has"}
@@ -408,7 +409,11 @@ class TestLegacyIsolation:
 
 class TestArchitecture:
     def test_method_uses_only_sanctioned_calls(self) -> None:
-        node = _method_node()
+        # v8.29: the public method only delegates to the extracted body.
+        public = _method_node()
+        assert {getattr(c.func, "attr", None) for c in ast.walk(public)
+                if isinstance(c, ast.Call)} == {"_run_tool_dispatch_chain"}
+        node = _method_node("_run_tool_dispatch_chain")
         names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
         for forbidden in (
             "skill_dispatch", "is_registered", "build_dispatch_decision",
