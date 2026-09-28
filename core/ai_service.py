@@ -70,10 +70,16 @@ class AIService:
         resulting ordered messages are attached to the request so the
         underlying SDK receives the entire prepared context. When
         omitted, the request is single-turn (the pre-v7.5 default).
+
+        v8.35: the ``ContextManager`` token budget covers the history plus
+        ``request.prompt``, so the prompt is handed to
+        ``ContextManager.prepare_request`` (also without history, where it
+        only validates the budget and the request is sent unchanged).
+        Trimming stays in the ``ContextManager``.
         """
         merged = request
+        prepared = self._context_manager.prepare_request(history, request.prompt)
         if history is not None:
-            prepared = self._context_manager.prepare(history)
             effective = ConversationHistory()
             effective.extend(prepared)
             merged = AIRequest(prompt=request.prompt, history=effective)

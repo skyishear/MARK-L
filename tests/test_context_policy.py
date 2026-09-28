@@ -39,8 +39,11 @@ def history(*turns: tuple[str, str]) -> ConversationHistory:
 def pairs(n: int, size: int = 1, prefix: str = "") -> ConversationHistory:
     turns: list[tuple[str, str]] = []
     for i in range(n):
-        turns.append(("user", f"{prefix}u{i}".ljust(size, ".")))
-        turns.append(("assistant", f"{prefix}a{i}".ljust(size, ".")))
+        # Word-character padding: each message is a single token under the
+        # v8.35 local tokenizer, so these fixtures exercise the v8.34
+        # message / character limits with the token budget satisfied.
+        turns.append(("user", f"{prefix}u{i}".ljust(size, "x")))
+        turns.append(("assistant", f"{prefix}a{i}".ljust(size, "x")))
     return history(*turns)
 
 
@@ -243,6 +246,8 @@ def service_with_capture() -> tuple[AIService, Capture]:
 
 class TestIntegration:
     def test_aiservice_sends_bounded_view_and_prompt_not_counted(self) -> None:
+        # The prompt is outside the v8.34 *character* budget (v8.35 counts its
+        # tokens: one word -> 1 token, well within 8,192).
         s, cap = service_with_capture()
         h = pairs(10, size=1000)  # exactly 20,000 chars of history
         s.complete("cap", AIRequest(prompt="p" * 50_000), history=h)
@@ -274,7 +279,8 @@ class TestArchitecture:
     def test_imports_only_conversation_history(self) -> None:
         tree = ast.parse(open(MODULE_PATH, encoding="utf-8").read())
         mods = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
-        assert mods == {"__future__", "core.conversation_history"}
+        # v8.35: + the provider-neutral token counter leaf (and typing).
+        assert mods == {"__future__", "typing", "core.conversation_history", "core.token_counter"}
         assert not [n for n in ast.walk(tree) if isinstance(n, ast.Import)]
         assert cm_module.__all__ == ["ContextManager", "ContextValidationError"]
 
@@ -284,9 +290,12 @@ class TestArchitecture:
                   | {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
                   | {getattr(n, "name", "") for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.ClassDef))})
         lowered = {i.lower() for i in idents}
-        for token in ("token", "tokenizer", "tiktoken", "encode", "openai", "anthropic", "gemini", "ollama",
-                      "summar", "embed"):
+        # v8.35: token *budgeting* identifiers are allowed; tokenizer logic
+        # (regexes, encoders) and provider / model names are not.
+        for token in ("tokenizer", "tiktoken", "encode", "findall", "compile", "openai", "anthropic", "gemini",
+                      "ollama", "summar", "embed", "model", "provider"):
             assert not any(token in i for i in lowered), token
+        assert "re" not in {n.names[0].name for n in ast.walk(tree) if isinstance(n, ast.Import)}
 
     def test_prepare_never_mutates(self) -> None:
         tree = ast.parse(inspect.getsource(ContextManager))

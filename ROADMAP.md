@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.34 complete** · Active milestone: **none** · Next planned: **v8.35 Token Budgeting — NOT STARTED**
-> Verified suite at checkpoint: **2225 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.35 complete** · Active milestone: **none** · Next planned: **v8.36 System Channel and Memory Injection — NOT STARTED**
+> Verified suite at checkpoint: **2278 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -42,7 +42,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.32 resume a failed lifecycle run | ✅ Complete |
 | v8.33 bounded in-run retry | ✅ Complete |
 | v8.34 context policy and history trimming | ✅ Complete |
-| v8.35–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
+| v8.35 token budgeting | ✅ Complete |
+| v8.36–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -405,6 +406,39 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   counting, tokenizer or budget abstraction here; no provider, `AIService`,
   Agent, tool or execution change. No existing test changed. Verified: 40
   new focused, full suite 2225.
+- v8.35 Token Budgeting — new stdlib-only leaf `core/token_counter.py`
+  (`TokenCounter` protocol `count(text) -> int`, provider-neutral; default
+  `LocalTokenCounter`: a deterministic local lexical tokenizer — each run of
+  word characters `\w+` and each other non-space character is one token;
+  no network, no provider SDK, no new dependency, not a character ratio,
+  not model-specific). **Locked owner decisions:** **D1** pluggable counter,
+  no counting logic inside `ContextManager` (it only consumes the injected
+  counter); **D2** `max_tokens = 8,192` — the **input/context** budget,
+  enabled by default, unrelated to provider output caps; **D3** it covers
+  **history + the request's new prompt**; **D4** no output-token
+  reservation (Claude's `max_tokens=1024` output cap untouched); **D5** a
+  **third independent limit** beside `max_messages = 50` and
+  `max_chars = 20,000`, all enabled by default, with the v8.34 rules
+  unchanged (canonical history never mutated, `ContextManager` owns
+  trimming, bounded derived view, oldest complete user/assistant pairs
+  dropped first, no orphan leading assistant, order and content preserved,
+  newest required context that cannot fit → `ContextValidationError`, never
+  truncated or silently dropped). Provider / model context windows are out
+  of scope; `ContextManager` carries no provider or model identity.
+  `ContextManager(*, max_messages=50, max_chars=20_000, max_tokens=8_192,
+  token_counter=None)`; `prepare(history)` applies all three limits to the
+  history alone; new `prepare_request(history, prompt)` applies
+  `self.prepare(history)` (subclass overrides honoured) and then the token
+  budget over history + prompt — a prompt that alone exceeds 8,192 tokens
+  raises. `AIService.complete` now calls `prepare_request` (plumbing only,
+  also without history, where it only validates the budget and the request
+  is sent unchanged). Sanctioned test updates (v8.34 `test_context_policy.py`):
+  fixture padding `"."` → `"x"` (same characters, one token per message, so
+  the v8.34 character tests keep exercising the character limit with the
+  token budget satisfied); import / identifier pins now allow the counter
+  leaf and budget names while still forbidding tokenizer logic and provider
+  / model names in `ContextManager`. Verified: 53 new focused, full suite
+  2278.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -413,16 +447,18 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.34 — Context Policy and History Trimming: COMPLETE.**
+**v8.35 — Token Budgeting: COMPLETE.**
 
-- Full suite: 2225 passed, 0 failed, 0 errors, 0 skipped.
-- Frozen legacy modules: zero diff; the only production change is
-  `core/context_manager.py` (providers, `AIService`, Agent, tools and
-  execution unchanged).
-- Provider context is now bounded by default (50 messages / 20,000 content
-  characters, complete-pair trimming) while the canonical history stays
-  intact. Token budgeting (v8.35), the system channel / memory injection
-  (v8.36) and tool calling remain deferred to their planned milestones.
+- Full suite: 2278 passed, 0 failed, 0 errors, 0 skipped.
+- Frozen legacy modules: zero diff; production changes only in
+  `core/context_manager.py`, the new leaf `core/token_counter.py` and the
+  one-call plumbing in `core/ai_service.py` (providers, Agent, tools and
+  execution unchanged; no dependency added).
+- Provider input is now bounded by default by three independent limits —
+  50 messages / 20,000 content characters / 8,192 input tokens (history +
+  prompt, deterministic local tokenizer) — while the canonical history stays
+  intact. The system channel / memory injection (v8.36) and tool calling
+  remain deferred to their planned milestones.
 
 ---
 
@@ -815,11 +851,21 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.35 — Token Budgeting — **NOT STARTED**
+### v8.36 — System Channel and Memory Injection — **NOT STARTED**
 
 Per the owner-authorized plan above. Contract audit required before
-implementation; open inputs: the token-count method (O10) and the token limit
-value.
+implementation; open input: `sensitive` memory handling (O3) and the memory
+injection policy values.
+
+### v8.35 — Token Budgeting — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+Owner decisions locked before implementation: D1 pluggable provider-neutral
+`count(text) -> int` counter with a deterministic local tokenizer, no network,
+no counting logic in `ContextManager`; D2 `max_tokens = 8,192` input/context
+budget, enabled by default; D3 covers history + current prompt; D4 no output
+reservation, provider output caps unchanged; D5 third independent limit beside
+50 messages / 20,000 characters, v8.34 behaviour intact; provider / model
+context windows out of scope.
 
 ### v8.34 — Context Policy and History Trimming — **COMPLETE** (moved to history above; kept here as the discovery record)
 
