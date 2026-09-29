@@ -280,9 +280,11 @@ class TestArchitecture:
         tree = ast.parse(open(MODULE_PATH, encoding="utf-8").read())
         mods = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
         # v8.35: + the provider-neutral token counter leaf (and typing).
-        assert mods == {"__future__", "typing", "core.conversation_history", "core.token_counter"}
+        # v8.36: + the provider-neutral memory-context leaf (and dataclasses).
+        assert mods == {"__future__", "dataclasses", "typing", "core.conversation_history",
+                        "core.token_counter", "core.memory_context"}
         assert not [n for n in ast.walk(tree) if isinstance(n, ast.Import)]
-        assert cm_module.__all__ == ["ContextManager", "ContextValidationError"]
+        assert cm_module.__all__ == ["ContextManager", "ContextValidationError", "PreparedContext"]  # v8.36
 
     def test_no_token_or_provider_logic(self) -> None:
         tree = ast.parse(open(MODULE_PATH, encoding="utf-8").read())

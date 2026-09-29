@@ -63,6 +63,8 @@ class OpenAIProvider:
         self.call_count += 1
         client = self._get_client()
         messages: list[dict] = []
+        if request.system is not None:  # v8.36: leading system message
+            messages.append({"role": "system", "content": request.system})
         if request.history is not None:
             for m in request.history.messages():
                 messages.append(m.to_openai_payload())

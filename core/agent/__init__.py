@@ -40,6 +40,7 @@ from core.skill_registry import dispatch as skill_dispatch, is_registered
 # v8.x Foundation stores (v8.10 bridge). ``PlanningEngine`` is aliased
 # because the legacy ``core.planner.PlanningEngine`` above keeps its name.
 from core.execution_failure import normalize_execution_failure
+from core.memory_context import MemoryRequest
 from core.failure_taxonomy import FailureCategory, classify_failure
 from core.execution_planner import ExecutionPlanner
 from core.goal_manager import GoalManager, GoalStatus
@@ -1605,6 +1606,8 @@ class Agent:
         provider_name: str,
         prompt: str,
         history: ConversationHistory | None = None,
+        *,
+        memory: MemoryRequest | None = None,
     ) -> AIResponse:
         """Delegate one synchronous reasoning request to ``AIService``.
 
@@ -1616,10 +1619,14 @@ class Agent:
         no provider-specific logic — that all lives inside
         ``AIService`` and the v7.x real-transport provider stack.
         """
+        # v8.36: ``memory`` is forwarded only when requested, so the default
+        # call shape to ``AIService.complete`` is exactly the pre-v8.36 one.
+        extra = {"memory": memory} if memory is not None else {}
         return self._ai_service.complete(
             provider_name,
             AIRequest(prompt=prompt),
             history=history,
+            **extra,
         )
 
     @property
@@ -1649,6 +1656,8 @@ class Agent:
         self,
         provider_name: str,
         prompt: str,
+        *,
+        memory: MemoryRequest | None = None,
     ) -> AIResponse:
         """One synchronous multi-turn reasoning call.
 
@@ -1658,14 +1667,18 @@ class Agent:
         user turn and the assistant reply are appended to the
         Agent's history so the next :meth:`ask` sees the full
         ordered transcript. No memory / reflection / learning
-        integration is performed here.
+        integration is performed here, except the v8.36 opt-in: an explicit
+        ``memory=MemoryRequest(...)`` injects non-sensitive memories into the
+        request's system channel (canonical history is unchanged).
         """
         prior_history = ConversationHistory()
         prior_history.extend(self._conversation_history)
+        extra = {"memory": memory} if memory is not None else {}  # v8.36 opt-in only
         response = self._ai_service.complete(
             provider_name,
             AIRequest(prompt=prompt),
             history=prior_history,
+            **extra,
         )
         self._conversation_history.append_user(prompt)
         self._conversation_history.append_assistant(response.text)

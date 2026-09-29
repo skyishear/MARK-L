@@ -516,6 +516,7 @@ class TestNoForbiddenIntegration:
             "core.execution_failure",
             "core.failure_taxonomy",
             "core.tool_catalog",
+            "core.memory_context",
             "datetime",
             "types",
             "typing",

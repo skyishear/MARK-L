@@ -62,6 +62,9 @@ class GeminiProvider:
         """
         self.call_count += 1
         client = self._get_client()
+        extra: dict = {}
+        if request.system is not None:  # v8.36: Gemini ``system_instruction``
+            extra["config"] = {"system_instruction": request.system}
         if request.history is not None and len(request.history) > 0:
             contents: list[dict] = [
                 m.to_gemini_payload() for m in request.history.messages()
@@ -70,11 +73,13 @@ class GeminiProvider:
             sdk_response = client.models.generate_content(
                 model=self.model,
                 contents=contents,
+                **extra,
             )
         else:
             sdk_response = client.models.generate_content(
                 model=self.model,
                 contents=request.prompt,
+                **extra,
             )
         text = getattr(sdk_response, "text", "") or ""
         return AIResponse(text=text, provider_name=self.name)

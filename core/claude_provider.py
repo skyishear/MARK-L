@@ -68,11 +68,10 @@ class ClaudeProvider:
             for m in request.history.messages():
                 messages.append(m.to_anthropic_payload())
         messages.append({"role": "user", "content": request.prompt})
-        sdk_response = client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            messages=messages,
-        )
+        kwargs: dict = {"model": self.model, "max_tokens": 1024, "messages": messages}
+        if request.system is not None:  # v8.36: Anthropic ``system=``
+            kwargs["system"] = request.system
+        sdk_response = client.messages.create(**kwargs)
         text = ""
         for block in sdk_response.content:
             # First text-bearing block wins; SDK content is a list of

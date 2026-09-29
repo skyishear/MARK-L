@@ -32,6 +32,10 @@ class AIRequest:
 
     prompt: str
     history: Optional[ConversationHistory] = None
+    # v8.36: request-level system channel (system instructions, then any
+    # opt-in memory block). ``None`` keeps every request unchanged; each
+    # provider module maps it to its own native system field.
+    system: Optional[str] = None
 
 
 @dataclass(frozen=True, slots=True)

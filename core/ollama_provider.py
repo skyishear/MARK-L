@@ -66,17 +66,22 @@ class OllamaProvider:
         """
         self.call_count += 1
         client = self._get_client()
+        extra: dict = {}
+        if request.system is not None:  # v8.36: Ollama ``system=``
+            extra["system"] = request.system
         if request.history is not None and len(request.history) > 0:
             messages = [m.to_ollama_payload() for m in request.history.messages()]
             sdk_response = client.generate(
                 model=self.model,
                 prompt=request.prompt,
                 messages=messages,
+                **extra,
             )
         else:
             sdk_response = client.generate(
                 model=self.model,
                 prompt=request.prompt,
+                **extra,
             )
         text = ""
         if isinstance(sdk_response, dict):

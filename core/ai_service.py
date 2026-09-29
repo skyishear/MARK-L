@@ -34,7 +34,13 @@ class AIService:
     def __init__(
         self,
         context_manager: ContextManager | None = None,
+        *,
+        system: str | None = None,
     ) -> None:
+        if system is not None and not isinstance(system, str):
+            raise TypeError("system must be a str or None")
+        # v8.36: configured system instructions (default None: unchanged).
+        self._system = system
         self._registry = build_default_registry()
         self._router = AIProviderRouter(self._registry)
         self._engine = AIConversationEngine(self._router)
@@ -57,11 +63,18 @@ class AIService:
         """The internal context manager (read-only view)."""
         return self._context_manager
 
+    @property
+    def system(self) -> str | None:
+        """The configured system instructions (v8.36; ``None`` by default)."""
+        return self._system
+
     def complete(
         self,
         provider_name: str,
         request: AIRequest,
         history: ConversationHistory | None = None,
+        *,
+        memory: object | None = None,
     ) -> AIResponse:
         """Route ``request`` to ``provider_name`` and return the reply.
 
@@ -76,13 +89,33 @@ class AIService:
         ``ContextManager.prepare_request`` (also without history, where it
         only validates the budget and the request is sent unchanged).
         Trimming stays in the ``ContextManager``.
+
+        v8.36: the system channel is ``request.system`` when set, otherwise
+        the configured ``system``; ``memory`` (an explicit
+        ``core.memory_context.MemoryRequest``, forwarded opaquely — AIService
+        stays free of memory imports; ``ContextManager`` validates it) opts
+        into memory injection. With neither, the v8.35 path above runs
+        unchanged. Otherwise ``ContextManager.prepare_context`` builds the
+        SYSTEM -> MEMORY -> HISTORY -> PROMPT context (sensitive memories are
+        never selected) and the request is sent with ``system`` set.
         """
-        merged = request
-        prepared = self._context_manager.prepare_request(history, request.prompt)
+        system = request.system if request.system is not None else self._system
+        if system is None and memory is None:
+            merged = request
+            prepared = self._context_manager.prepare_request(history, request.prompt)
+            if history is not None:
+                effective = ConversationHistory()
+                effective.extend(prepared)
+                merged = AIRequest(prompt=request.prompt, history=effective)
+            return self._engine.complete(provider_name, merged)
+        context = self._context_manager.prepare_context(
+            history, request.prompt, system=system, memory=memory
+        )
+        effective_history = None
         if history is not None:
-            effective = ConversationHistory()
-            effective.extend(prepared)
-            merged = AIRequest(prompt=request.prompt, history=effective)
+            effective_history = ConversationHistory()
+            effective_history.extend(context.messages)
+        merged = AIRequest(prompt=request.prompt, history=effective_history, system=context.system)
         return self._engine.complete(provider_name, merged)
 
 

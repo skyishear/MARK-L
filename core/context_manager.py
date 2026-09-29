@@ -42,14 +42,30 @@ no async, no persistence, no caching, no logging, no metrics.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 from core.conversation_history import ConversationHistory, Message
+from core.memory_context import MemoryRequest, render_memories, select_memories
 from core.token_counter import LocalTokenCounter, TokenCounter
 
 
 class ContextValidationError(ValueError):
     """Raised when the newest required context cannot fit the limits."""
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedContext:
+    """v8.36: the request-level context for one provider call.
+
+    ``messages`` — the bounded history view; ``system`` — the request-level
+    system channel text (system instructions, then the rendered memory
+    block), or ``None``; ``memory_count`` — memories actually injected.
+    """
+
+    messages: tuple[Message, ...]
+    system: Optional[str]
+    memory_count: int
 
 
 class ContextManager:
@@ -141,6 +157,57 @@ class ContextManager:
             )
         return self._bound(tuple(self.prepare(history)), prompt_tokens=prompt_tokens)
 
+    def prepare_context(
+        self,
+        history: Optional[ConversationHistory],
+        prompt: str,
+        *,
+        system: Optional[str] = None,
+        memory: Optional[MemoryRequest] = None,
+    ) -> PreparedContext:
+        """v8.36: the full request-level context — SYSTEM, MEMORY, HISTORY,
+        PROMPT — within the 8,192-token input budget.
+
+        The system instructions and the prompt are required and never
+        truncated. The history is bounded exactly as in v8.34 / v8.35, with
+        the system tokens counted alongside the prompt tokens. Memories
+        (opt-in, ``memory``) are the removable derived context: the
+        non-sensitive memories selected by ``select_memories`` are kept in
+        recall order and dropped from the end until everything fits; memory
+        never causes history trimming. Message and character limits apply to
+        the history only. Canonical history is never mutated.
+
+        Raises:
+            TypeError: ``prompt`` / ``system`` are not ``str`` (``system``
+                may be ``None``), or ``memory`` is not a ``MemoryRequest``.
+            ContextValidationError: system + prompt alone exceed
+                ``max_tokens``, or the newest history unit plus them cannot
+                fit.
+        """
+        if not isinstance(prompt, str):
+            raise TypeError("prompt must be a str")
+        if system is not None and not isinstance(system, str):
+            raise TypeError("system must be a str or None")
+        if memory is not None and not isinstance(memory, MemoryRequest):
+            raise TypeError("memory must be a MemoryRequest or None")
+        prompt_tokens = self._count(prompt)
+        system_tokens = self._count(system) if system is not None else 0
+        required = prompt_tokens + system_tokens
+        if required > self._max_tokens:
+            raise ContextValidationError(
+                f"system ({system_tokens} tokens) + prompt ({prompt_tokens} tokens) "
+                f"exceeds max_tokens={self._max_tokens}"
+            )
+        messages = self._bound(tuple(self.prepare(history)), prompt_tokens=required)
+        fixed = prompt_tokens + sum(self._count(m.content) for m in messages)
+        entries = select_memories(memory, prompt) if memory is not None else ()
+        for kept in range(len(entries), 0, -1):
+            block = render_memories(entries[:kept])
+            text = block if not system else f"{system}\n\n{block}"
+            if self._count(text) + fixed <= self._max_tokens:
+                return PreparedContext(messages=messages, system=text, memory_count=kept)
+        return PreparedContext(messages=messages, system=system, memory_count=0)
+
     def _count(self, text: str) -> int:
         tokens = self._token_counter.count(text)
         if not isinstance(tokens, int) or isinstance(tokens, bool) or tokens < 0:
@@ -201,4 +268,4 @@ class ContextManager:
         return starts
 
 
-__all__ = ["ContextManager", "ContextValidationError"]
+__all__ = ["ContextManager", "ContextValidationError", "PreparedContext"]

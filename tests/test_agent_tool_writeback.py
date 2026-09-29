@@ -466,6 +466,7 @@ class TestArchitecture:
             "core.execution_failure",
             "core.failure_taxonomy",
             "core.tool_catalog",
+            "core.memory_context",
             "core.tool_registry", "core.tool_router",
         }
 

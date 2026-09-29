@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.35 complete** · Active milestone: **none** · Next planned: **v8.36 System Channel and Memory Injection — NOT STARTED**
-> Verified suite at checkpoint: **2278 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.36 complete** · Active milestone: **none** · Next planned: **v8.37 Neutral Tool-Calling Types — NOT STARTED**
+> Verified suite at checkpoint: **2322 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -43,7 +43,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.33 bounded in-run retry | ✅ Complete |
 | v8.34 context policy and history trimming | ✅ Complete |
 | v8.35 token budgeting | ✅ Complete |
-| v8.36–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
+| v8.36 system channel and opt-in memory injection | ✅ Complete |
+| v8.37–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -439,6 +440,48 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   leaf and budget names while still forbidding tokenizer logic and provider
   / model names in `ContextManager`. Verified: 53 new focused, full suite
   2278.
+- v8.36 System Channel and Memory Injection — **System channel:** additive
+  request-level `AIRequest.system: str | None = None` (no `system` /
+  `developer` `Message` role; `ConversationHistory` untouched), supplied
+  through `AIService(..., *, system=None)` configuration (an explicit
+  `AIRequest.system` takes precedence), mapped only inside provider modules
+  and only when set — OpenAI leading `{"role": "system"}` message, Anthropic
+  `system=`, Gemini `config={"system_instruction": ...}`, Ollama `system=`;
+  with `system=None` every payload is byte-identical to v8.35; the
+  `AIProvider` interface is unchanged. **Memory injection (opt-in):** new
+  stdlib-only leaf `core/memory_context.py` (`MemoryRequest(source,
+  category=None, project=None, memory_type=None)`, `select_memories`,
+  `render_memories`); requested only by passing `memory=MemoryRequest(...)`
+  to `AIService.complete` or the new keyword-only `Agent.ask(...,
+  memory=None)` / `Agent.reason(..., memory=None)` (forwarded only when set,
+  so the default call shape is unchanged); source is only
+  `core.memory_engine.MemoryEngine` (injected, never imported by the leaf;
+  never the legacy SQLite memory, index, reflection, learning or knowledge
+  stores); query = the current prompt through the existing deterministic
+  substring `recall` (optional category / project / memory_type filters use
+  recall's own semantics; no ranking, embeddings or search; TTL semantics
+  untouched); at most **10** eligible memories in recall order; deterministic
+  render `Relevant memories:` / `- [<category>] <key>: <value>`. **O3
+  (locked privacy boundary):** a memory whose `sensitive` flag is not
+  exactly `False` is removed before rendering — sensitive memories never
+  reach `AIRequest.system` or any provider payload; no override, no opt-in.
+  **Order:** SYSTEM → MEMORY (appended to the system channel) → HISTORY →
+  PROMPT. **Budget:** the 8,192-token input budget now covers system +
+  memory + history + prompt (`ContextManager.prepare_context`, new
+  `PreparedContext(messages, system, memory_count)`); system and prompt are
+  required and never truncated; history is bounded exactly as in v8.34 /
+  v8.35 with the system tokens counted alongside the prompt; memories are the
+  removable part, dropped from the end until everything fits, and never cause
+  history trimming; system + prompt over budget, or the newest history unit
+  plus them not fitting, raises `ContextValidationError`; 50 messages /
+  20,000 characters still apply to the history only. With no system and no
+  memory, `AIService` runs the unchanged v8.35 path. `AIService` stays free
+  of memory imports (the `MemoryRequest` is forwarded opaquely and validated
+  by `ContextManager`). No tool, execution, legacy, TTL, ranking,
+  persistence or dependency change. Sanctioned test updates: Agent import
+  allowlists (+`core.memory_context`); v8.34 `ContextManager` import /
+  `__all__` pins (+ the memory-context leaf, `PreparedContext`). Verified:
+  44 new focused, full suite 2322.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -447,18 +490,18 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.35 — Token Budgeting: COMPLETE.**
+**v8.36 — System Channel and Memory Injection: COMPLETE.**
 
-- Full suite: 2278 passed, 0 failed, 0 errors, 0 skipped.
-- Frozen legacy modules: zero diff; production changes only in
-  `core/context_manager.py`, the new leaf `core/token_counter.py` and the
-  one-call plumbing in `core/ai_service.py` (providers, Agent, tools and
-  execution unchanged; no dependency added).
-- Provider input is now bounded by default by three independent limits —
-  50 messages / 20,000 content characters / 8,192 input tokens (history +
-  prompt, deterministic local tokenizer) — while the canonical history stays
-  intact. The system channel / memory injection (v8.36) and tool calling
-  remain deferred to their planned milestones.
+- Full suite: 2322 passed, 0 failed, 0 errors, 0 skipped.
+- Frozen legacy modules: zero diff; production changes in
+  `core/ai_provider.py`, `core/ai_service.py`, `core/context_manager.py`,
+  the four provider modules, `core/agent/__init__.py` and the new leaf
+  `core/memory_context.py` (tools, execution, `MemoryEngine`, legacy memory
+  and dependencies unchanged).
+- Advanced context management (area 1) is complete: bounded history
+  (v8.34), token budget (v8.35), request-level system channel and opt-in,
+  sensitive-free memory injection (v8.36). Tool calling (v8.37+) remains
+  deferred to its planned milestones.
 
 ---
 
@@ -851,11 +894,23 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.36 — System Channel and Memory Injection — **NOT STARTED**
+### v8.37 — Neutral Tool-Calling Types — **NOT STARTED**
 
 Per the owner-authorized plan above. Contract audit required before
-implementation; open input: `sensitive` memory handling (O3) and the memory
-injection policy values.
+implementation; open inputs from the plan: tool-call auditing, tool-error
+disclosure to providers, side-effecting tool confirmation, first provider
+and v8 / v9 numbering (as they apply to v8.37–v8.40).
+
+### v8.36 — System Channel and Memory Injection — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+Owner decisions locked before implementation: O3 — `sensitive=True` memory is
+never injected or sent to any provider (no override, no opt-in); system channel
+= request-level `AIRequest.system` via `AIService` configuration (no system /
+developer role); memory source = `core.memory_engine` only; opt-in injection;
+query = current prompt via existing `recall`; max 10 memories in recall order;
+optional category / project / memory_type filters; TTL unchanged; order SYSTEM
+→ MEMORY → HISTORY → PROMPT; the 8,192-token budget covers system + memory +
+history + prompt with memory as the removable part.
 
 ### v8.35 — Token Budgeting — **COMPLETE** (moved to history above; kept here as the discovery record)
 
