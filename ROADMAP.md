@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.36 complete** · Active milestone: **none** · Next planned: **v8.37 Neutral Tool-Calling Types — NOT STARTED**
-> Verified suite at checkpoint: **2322 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.37 complete** · Active milestone: **none** · Next planned: **v8.38 First Provider Tool-Call Normalization — NOT STARTED**
+> Verified suite at checkpoint: **2387 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -44,7 +44,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.34 context policy and history trimming | ✅ Complete |
 | v8.35 token budgeting | ✅ Complete |
 | v8.36 system channel and opt-in memory injection | ✅ Complete |
-| v8.37–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
+| v8.37 neutral tool-calling types | ✅ Complete |
+| v8.38–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -482,6 +483,33 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   allowlists (+`core.memory_context`); v8.34 `ContextManager` import /
   `__all__` pins (+ the memory-context leaf, `PreparedContext`). Verified:
   44 new focused, full suite 2322.
+- v8.37 Neutral Tool-Calling Types — **types only**: new stdlib-only leaf
+  `core/tool_calling.py` (`__all__ = ["ToolCall", "ToolCallResult",
+  "validate_tool_calls"]`; no importer yet; no existing file changed).
+  `ToolCall(call_id, name, arguments)` — a model-proposed (untrusted) call;
+  frozen / slotted; `call_id` and `name` non-blank `str`; `arguments` a
+  mapping with `str` keys whose values are recursively JSON-compatible
+  (`str` / `int` / `float` / `bool` / `None` / lists / tuples / `str`-keyed
+  mappings; anything else → `TypeError` with a path), stored as a deep
+  read-only copy (mappings behind `MappingProxyType`, arrays as tuples)
+  that never aliases the caller's objects. `ToolCallResult(call_id, name,
+  output: str)` — the model-facing result, correlated by `call_id` (and
+  `name`, which some providers key results by); **no error / failure field
+  (deferred to owner decision O2)**. `validate_tool_calls(calls)` — a
+  sequence of `ToolCall` only, unique `call_id`s, original order, returned
+  as a tuple (`()` when empty). **Identity:** `call_id` is required, opaque
+  and stored verbatim — no id generation (the positional-id fallback for
+  providers without ids is a v8.38 mapping rule). Tool declarations reuse
+  the v8.31 `ToolSpec`; no `ToolDeclaration`. Deliberately distinct from
+  the execution-side `ToolRequest` / `ToolResult` (their exact-field pins
+  untouched). `AIRequest` / `AIResponse`, providers, `AIService`,
+  `ContextManager`, `MemoryEngine`, the tool stack, catalog, Agent,
+  execution and legacy modules unchanged — v8.36 behaviour byte-identical.
+  Deferred: provider mapping, `AIRequest` / `AIResponse` tool fields and
+  unsupported-provider behaviour (v8.38); runtime loop, authorization,
+  confirmation, `ToolCall` → `ToolRequest` / `ToolResult` → `ToolCallResult`
+  conversion (v8.39); auditing / writeback of tool calls (O9). Verified: 65
+  new focused, full suite 2387.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -490,18 +518,14 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.36 — System Channel and Memory Injection: COMPLETE.**
+**v8.37 — Neutral Tool-Calling Types: COMPLETE.**
 
-- Full suite: 2322 passed, 0 failed, 0 errors, 0 skipped.
-- Frozen legacy modules: zero diff; production changes in
-  `core/ai_provider.py`, `core/ai_service.py`, `core/context_manager.py`,
-  the four provider modules, `core/agent/__init__.py` and the new leaf
-  `core/memory_context.py` (tools, execution, `MemoryEngine`, legacy memory
-  and dependencies unchanged).
-- Advanced context management (area 1) is complete: bounded history
-  (v8.34), token budget (v8.35), request-level system channel and opt-in,
-  sensitive-free memory injection (v8.36). Tool calling (v8.37+) remains
-  deferred to its planned milestones.
+- Full suite: 2387 passed, 0 failed, 0 errors, 0 skipped.
+- Only new files (`core/tool_calling.py`, its tests, docs); no existing
+  module changed, frozen legacy modules zero diff.
+- Provider-neutral tool-call types exist for the planned provider mapping
+  (v8.38) and runtime loop (v8.39); nothing consumes them yet and no
+  behaviour changed.
 
 ---
 
@@ -894,12 +918,22 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.37 — Neutral Tool-Calling Types — **NOT STARTED**
+### v8.38 — First Provider Tool-Call Normalization — **NOT STARTED**
 
 Per the owner-authorized plan above. Contract audit required before
-implementation; open inputs from the plan: tool-call auditing, tool-error
-disclosure to providers, side-effecting tool confirmation, first provider
-and v8 / v9 numbering (as they apply to v8.37–v8.40).
+implementation; open inputs: first provider (O8), `AIRequest` / `AIResponse`
+tool fields and unsupported-provider behaviour, malformed-call representation,
+the positional-id fallback rule, and the tool-error representation (O2).
+
+### v8.37 — Neutral Tool-Calling Types — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+Contract locked before implementation: types only; stdlib leaf
+`core/tool_calling.py`; `ToolCall(call_id, name, arguments)` /
+`ToolCallResult(call_id, name, output)` / `validate_tool_calls`; non-blank ids
+and names, JSON-compatible deeply frozen arguments, no id generation, unique
+ids per sequence, order preserved; reuse `ToolSpec` (no `ToolDeclaration`); no
+failure field (O2); no change to `AIRequest` / `AIResponse`, providers, tool
+stack, catalog, Agent or execution.
 
 ### v8.36 — System Channel and Memory Injection — **COMPLETE** (moved to history above; kept here as the discovery record)
 
