@@ -570,7 +570,7 @@ TOOL_DECLARATIONS = [
                     )
                 },
                 "key":   {"type": "STRING", "description": "Short snake_case key (e.g. name, favorite_food, sister_name)"},
-                "value": {"type": "STRING", "description": "Concise value in English (e.g. Fatih, pizza, older sister)"},
+                "value": {"type": "STRING", "description": "Concise value in English (e.g. Alex, pizza, older sister)"},
                 "importance": {"type": "INTEGER", "description": "1 (trivial) to 5 (critical). Default 3."},
                 "confidence": {"type": "NUMBER", "description": "0.0-1.0 how sure this is correct. Default 1.0."},
                 "project": {"type": "STRING", "description": "Optional project/context this fact belongs to."},
