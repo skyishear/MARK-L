@@ -6,17 +6,39 @@ operation. No streaming, no routing, no fallback, no conversation
 memory, no MCP, no tool calling, no autonomous planning.
 
 This module is intentionally minimal. It depends on nothing in
-``core.*`` other than the standard library, so it stays independent
-from Planning, Memory, Reflection, Learning, Skill Registry, and
-Execution Pipeline — preserving the frozen architecture.
+``core.*`` beyond the provider-neutral value types it carries
+(``ConversationHistory``; v8.38: ``ToolSpec`` declarations and ``ToolCall``),
+so it stays independent from Planning, Memory, Reflection, Learning, Skill
+Registry, and Execution Pipeline — preserving the frozen architecture.
+
+v8.38 adds the provider tool-calling *boundary* only: ``AIRequest.tools``
+(declarations offered to the model), ``AIResponse.tool_calls`` (normalized
+calls the model proposed), ``ToolCallNormalizationError`` and
+``ToolCallingUnsupportedError``. Nothing here executes, routes or authorizes
+a tool.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
 
 from core.conversation_history import ConversationHistory, Message
+from core.tool_calling import ToolCall, validate_tool_calls
+from core.tool_catalog import ToolSpec
+
+
+class ToolCallNormalizationError(ValueError):
+    """v8.38: a provider-native tool call could not be normalized into a
+    ``ToolCall`` (malformed block, invalid id / name / arguments, duplicate
+    ids). Messages are structural only; any underlying validation error is
+    kept as the cause."""
+
+
+class ToolCallingUnsupportedError(Exception):
+    """v8.38: a request offered tools to a provider that does not declare
+    ``supports_tool_calling``; raised before the provider is invoked."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +58,26 @@ class AIRequest:
     # opt-in memory block). ``None`` keeps every request unchanged; each
     # provider module maps it to its own native system field.
     system: Optional[str] = None
+    # v8.38: tool declarations offered to the model (empty: no tools). Only
+    # ``ToolSpec``s with ``model_invocable=True`` and unique names; order
+    # preserved. Declarations only — not authorization (v8.39).
+    tools: tuple[ToolSpec, ...] = ()
+
+    def __post_init__(self) -> None:
+        tools = self.tools
+        if isinstance(tools, (str, bytes)) or not isinstance(tools, Iterable):
+            raise TypeError("tools must be a collection of ToolSpec")
+        normalized = tuple(tools)
+        names: set[str] = set()
+        for index, spec in enumerate(normalized):
+            if not isinstance(spec, ToolSpec):
+                raise TypeError(f"tools[{index}] is not a ToolSpec: {type(spec).__name__}")
+            if not spec.model_invocable:
+                raise ValueError(f"tools[{index}] ({spec.name!r}) is not model_invocable")
+            if spec.name in names:
+                raise ValueError(f"duplicate tool name: {spec.name!r}")
+            names.add(spec.name)
+        object.__setattr__(self, "tools", normalized)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,10 +86,16 @@ class AIResponse:
 
     ``text`` is the model's textual reply; ``provider_name`` records
     which concrete provider produced it (for introspection/tests).
+    v8.38: ``tool_calls`` holds the normalized tool calls the model
+    proposed, in response order (empty for a text-only reply).
     """
 
     text: str
     provider_name: str
+    tool_calls: tuple[ToolCall, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "tool_calls", validate_tool_calls(tuple(self.tool_calls)))
 
 
 class AIProvider(Protocol):
@@ -116,5 +164,7 @@ __all__ = [
     "AIRequest",
     "AIResponse",
     "StaticMockProvider",
+    "ToolCallNormalizationError",
+    "ToolCallingUnsupportedError",
     "default_provider",
 ]

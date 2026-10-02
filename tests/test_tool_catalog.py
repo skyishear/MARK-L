@@ -389,9 +389,10 @@ class TestArchitecture:
         assert not mutating & {"append", "update", "pop", "clear", "setdefault"}
 
     def test_only_the_agent_imports_it(self) -> None:
-        # v8.32: the Agent (composition root) is the one sanctioned consumer.
+        # v8.32: the Agent (composition root) is a sanctioned consumer;
+        # v8.38: so is the neutral AI boundary (AIRequest.tools: ToolSpec).
         for name in os.listdir(CORE_DIR):
-            if name.endswith(".py") and name != "tool_catalog.py":
+            if name.endswith(".py") and name not in ("tool_catalog.py", "ai_provider.py"):
                 with open(os.path.join(CORE_DIR, name), encoding="utf-8") as f:
                     assert "tool_catalog" not in f.read(), name
         with open(os.path.join(CORE_DIR, "agent", "__init__.py"), encoding="utf-8") as f:

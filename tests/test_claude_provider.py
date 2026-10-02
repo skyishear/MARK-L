@@ -192,7 +192,9 @@ class TestArchitecturalIsolation:
                     f"Forbidden import: {node.module}"
                 )
                 if root == "core":
-                    assert len(parts) >= 2 and parts[1] == "ai_provider", (
+                    # v8.38: + the neutral tool-call types (ToolCall), which the
+                    # first normalizing provider must construct.
+                    assert len(parts) >= 2 and parts[1] in ("ai_provider", "tool_calling"), (
                         f"Forbidden import: {node.module}"
                     )
                 assert not any(

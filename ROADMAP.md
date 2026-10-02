@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.37 complete** · Active milestone: **none** · Next planned: **v8.38 First Provider Tool-Call Normalization — NOT STARTED**
-> Verified suite at checkpoint: **2387 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.38 complete** · Active milestone: **none** · Next planned: **v8.39 Tool Runtime Loop — NOT STARTED**
+> Verified suite at checkpoint: **2449 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -45,7 +45,8 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.35 token budgeting | ✅ Complete |
 | v8.36 system channel and opt-in memory injection | ✅ Complete |
 | v8.37 neutral tool-calling types | ✅ Complete |
-| v8.38–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
+| v8.38 first provider tool-call normalization (Anthropic) | ✅ Complete |
+| v8.39–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
 | Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
 
 ---
@@ -510,6 +511,43 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   confirmation, `ToolCall` → `ToolRequest` / `ToolResult` → `ToolCallResult`
   conversion (v8.39); auditing / writeback of tool calls (O9). Verified: 65
   new focused, full suite 2387.
+- v8.38 First Provider Tool-Call Normalization — provider boundary only;
+  **first provider (O8) = Anthropic / `ClaudeProvider`**. `AIRequest` gains
+  the additive final field `tools: tuple[ToolSpec, ...] = ()` (collection →
+  tuple, order kept, every item a `ToolSpec`, duplicate names → `ValueError`,
+  `model_invocable=False` → `ValueError` — the v8.31 meaning, not
+  authorization). `AIResponse` gains `tool_calls: tuple[ToolCall, ...] = ()`
+  (the v8.37 type, validated by `validate_tool_calls`, response order).
+  New neutral errors in `core/ai_provider.py`:
+  `ToolCallNormalizationError(ValueError)` and `ToolCallingUnsupportedError`.
+  **Only `core/claude_provider.py` knows the Anthropic-native format:**
+  declarations `tools=[{"name", "description", "input_schema"}]` sent only
+  when `request.tools` is non-empty, as plain `dict` / `list` copies of
+  `ToolSpec.parameters` (never `idempotent` / `side_effects`); every
+  `tool_use` block → `ToolCall(call_id=id, name, arguments=input)` in response
+  order, id verbatim (no generation, no fallback); the first-text-block rule,
+  unknown-block handling and the v8.36 `system=` mapping are unchanged; no SDK
+  object leaves the module; `supports_tool_calling = True`. Malformed
+  `tool_use` blocks (missing / invalid id or name, non-mapping input, invalid
+  arguments, duplicate ids) raise `ToolCallNormalizationError` with a
+  structural message (block index + reason, never model text), the
+  underlying validation error kept as the cause — never repaired, invented
+  or dropped. `AIService` forwards `tools` on every path and, when tools are
+  offered to a provider whose neutral `supports_tool_calling` is not `True`
+  (OpenAI, Gemini, Ollama, any custom provider), raises
+  `ToolCallingUnsupportedError` before invoking it (fail-closed; no
+  provider-specific checks; direct `provider.complete()` calls are not
+  guarded in v8.38). With no tools every payload and response is identical
+  to v8.36. **Deferred:** O2 tool-error representation (`ToolCallResult`
+  unchanged), positional-id fallback for other providers, tool-declaration
+  token accounting (v8.39), runtime loop / execution / authorization (v8.39+).
+  OpenAI / Gemini / Ollama, the tool stack, catalog, context, memory, Agent,
+  execution and legacy modules unchanged; no dependency added. Sanctioned
+  pin updates (minimum, documented): `ToolSpec` importers (+`ai_provider`);
+  `ToolCall` importers (+`ai_provider`, `claude_provider`; now checked on
+  real imports, since `supports_tool_calling` is not an import); AI boundary
+  field pins (additive fields); Claude's import pin (+`core.tool_calling`).
+  Verified: 62 new focused, full suite 2449.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -518,14 +556,14 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.37 — Neutral Tool-Calling Types: COMPLETE.**
+**v8.38 — First Provider Tool-Call Normalization: COMPLETE.**
 
-- Full suite: 2387 passed, 0 failed, 0 errors, 0 skipped.
-- Only new files (`core/tool_calling.py`, its tests, docs); no existing
-  module changed, frozen legacy modules zero diff.
-- Provider-neutral tool-call types exist for the planned provider mapping
-  (v8.38) and runtime loop (v8.39); nothing consumes them yet and no
-  behaviour changed.
+- Full suite: 2449 passed, 0 failed, 0 errors, 0 skipped.
+- Production changes only in `core/ai_provider.py`, `core/claude_provider.py`
+  and `core/ai_service.py`; frozen legacy modules zero diff.
+- Claude can now be offered `ToolSpec` declarations and returns normalized
+  `ToolCall`s; other providers reject tools fail-closed. Nothing executes a
+  tool yet — the runtime loop is v8.39 (NOT STARTED).
 
 ---
 
@@ -918,12 +956,23 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.38 — First Provider Tool-Call Normalization — **NOT STARTED**
+### v8.39 — Tool Runtime Loop — **NOT STARTED**
 
 Per the owner-authorized plan above. Contract audit required before
-implementation; open inputs: first provider (O8), `AIRequest` / `AIResponse`
-tool fields and unsupported-provider behaviour, malformed-call representation,
-the positional-id fallback rule, and the tool-error representation (O2).
+implementation; open inputs: side-effecting tool confirmation (O1), tool-error
+disclosure / representation (O2), loop limits (O5), tool-call auditing (O9),
+tool-declaration token accounting, and how tool exchanges are represented in
+follow-up requests.
+
+### v8.38 — First Provider Tool-Call Normalization — **COMPLETE** (moved to history above; kept here as the discovery record)
+
+Contract locked before implementation: first provider (O8) = Anthropic;
+`AIRequest.tools: tuple[ToolSpec, ...] = ()` (model-invocable, unique names);
+`AIResponse.tool_calls: tuple[ToolCall, ...] = ()`; native mapping only in
+`ClaudeProvider`; `ToolCallNormalizationError` (structural, cause kept, never
+repair / drop); `ToolCallingUnsupportedError` raised by `AIService` via the
+neutral `supports_tool_calling` capability before invocation; O2, other
+providers' id fallback and tool-declaration token accounting deferred.
 
 ### v8.37 — Neutral Tool-Calling Types — **COMPLETE** (moved to history above; kept here as the discovery record)
 

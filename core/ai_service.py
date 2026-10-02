@@ -12,7 +12,7 @@ no caching, no logging, no metrics, no SDK init, no networking.
 from __future__ import annotations
 
 from core.ai_conversation_engine import AIConversationEngine
-from core.ai_provider import AIRequest, AIResponse
+from core.ai_provider import AIRequest, AIResponse, ToolCallingUnsupportedError
 from core.ai_provider_router import AIProviderRouter, AIProviderUnavailableError
 from core.context_manager import ContextManager
 from core.conversation_history import ConversationHistory
@@ -98,7 +98,19 @@ class AIService:
         unchanged. Otherwise ``ContextManager.prepare_context`` builds the
         SYSTEM -> MEMORY -> HISTORY -> PROMPT context (sensitive memories are
         never selected) and the request is sent with ``system`` set.
+
+        v8.38: ``request.tools`` is forwarded unchanged on every path. When it
+        is non-empty and the selected provider does not declare the neutral
+        capability ``supports_tool_calling = True``, this raises
+        ``ToolCallingUnsupportedError`` before anything else happens and the
+        provider is never invoked (fail-closed; no provider-specific checks).
         """
+        if request.tools:
+            provider = self._router.select(provider_name)
+            if getattr(provider, "supports_tool_calling", False) is not True:
+                raise ToolCallingUnsupportedError(
+                    f"provider {provider_name!r} does not support tool calling"
+                )
         system = request.system if request.system is not None else self._system
         if system is None and memory is None:
             merged = request
@@ -106,7 +118,7 @@ class AIService:
             if history is not None:
                 effective = ConversationHistory()
                 effective.extend(prepared)
-                merged = AIRequest(prompt=request.prompt, history=effective)
+                merged = AIRequest(prompt=request.prompt, history=effective, tools=request.tools)
             return self._engine.complete(provider_name, merged)
         context = self._context_manager.prepare_context(
             history, request.prompt, system=system, memory=memory
@@ -115,7 +127,10 @@ class AIService:
         if history is not None:
             effective_history = ConversationHistory()
             effective_history.extend(context.messages)
-        merged = AIRequest(prompt=request.prompt, history=effective_history, system=context.system)
+        merged = AIRequest(
+            prompt=request.prompt, history=effective_history, system=context.system,
+            tools=request.tools,
+        )
         return self._engine.complete(provider_name, merged)
 
 

@@ -32,9 +32,9 @@ Never rely on previous conversations. Verify the current state before acting.
 
 - Legacy v3.x execution stack: **frozen** (read-only; see `ROADMAP.md`).
 - Active surface: v8.x Foundation stores, v8.11–v8.20 tool stack, v8.21–v8.33 projection path.
-- Checkpoint: **v8.37 complete**; active milestone: none; next planned milestone:
-  **v8.38** of the owner-authorized plan recorded in `ROADMAP.md` (the living checkpoint).
-- Verified suite: **2387 passed, 0 failed, 0 errors, 0 skipped**.
+- Checkpoint: **v8.38 complete**; active milestone: none; next planned milestone:
+  **v8.39** of the owner-authorized plan recorded in `ROADMAP.md` (the living checkpoint).
+- Verified suite: **2449 passed, 0 failed, 0 errors, 0 skipped**.
 
 Details and history live in `ROADMAP.md` — do not duplicate them here.
 

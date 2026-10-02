@@ -239,20 +239,33 @@ class TestBoundary:
                       "uuid", "random", "time"):  # (no json module: pinned by test_stdlib_only)
             assert not any(token in i for i in lowered), token
 
-    def test_no_importer_yet(self) -> None:
+    def test_only_the_provider_boundary_imports_it(self) -> None:
+        # v8.38: the neutral AI boundary (AIResponse.tool_calls) and the first
+        # normalizing provider are the sanctioned importers.
+        # Checked on real imports (``supports_tool_calling`` is an unrelated
+        # v8.38 capability attribute name, not an import).
+        allowed = {"tool_calling.py", "ai_provider.py", "claude_provider.py"}
         for dirpath, _, files in os.walk(CORE_DIR):
             for name in files:
-                if name.endswith(".py") and name != "tool_calling.py":
+                if name.endswith(".py") and name not in allowed:
                     with open(os.path.join(dirpath, name), encoding="utf-8") as f:
-                        assert "tool_calling" not in f.read(), name
+                        tree = ast.parse(f.read())
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.ImportFrom):
+                            assert node.module != "core.tool_calling", name
+                            if node.module == "core":
+                                assert "tool_calling" not in {a.name for a in node.names}, name
+                        elif isinstance(node, ast.Import):
+                            assert "core.tool_calling" not in {a.name for a in node.names}, name
 
     def test_existing_tool_type_pins_intact(self) -> None:
         assert [f.name for f in dataclasses.fields(ToolRequest)] == ["tool_name", "arguments"]
         assert [f.name for f in dataclasses.fields(ToolResult)] == ["tool_name", "output"]
 
     def test_ai_boundary_unchanged(self) -> None:
-        assert [f.name for f in dataclasses.fields(AIRequest)] == ["prompt", "history", "system"]
-        assert [f.name for f in dataclasses.fields(AIResponse)] == ["text", "provider_name"]
+        # v8.38: additive final fields only (existing fields and order intact).
+        assert [f.name for f in dataclasses.fields(AIRequest)] == ["prompt", "history", "system", "tools"]
+        assert [f.name for f in dataclasses.fields(AIResponse)] == ["text", "provider_name", "tool_calls"]
 
     def test_v8_36_provider_payload_unchanged(self) -> None:
         calls: list[dict] = []
