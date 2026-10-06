@@ -372,8 +372,7 @@ evaluated against the repository.
 
 ## 10. Status snapshot
 
-*Informational snapshot as of 2026-10-06 at checkpoint v8.38 (head
-`aa95b63` plus the uncommitted documentation changes). It is not normative: agents
+*Informational snapshot as of 2026-10-06 at checkpoint v8.45. It is not normative: agents
 re-evaluate §9 against the repository and never against this table.
 `ROADMAP.md` stays the living checkpoint.*
 
@@ -391,27 +390,28 @@ re-evaluate §9 against the repository and never against this table.
 | **C10** | COMPLETE | OpenAI, Gemini and Ollama map tool calls natively and declare `supports_tool_calling` (`core/openai_provider.py`, `core/gemini_provider.py`, `core/ollama_provider.py`; OD-4b locked); every other provider is still fail-closed. Tests: `tests/test_provider_tool_calling.py` (69). Request shapes were checked against the real SDK models in the build environment. |
 | **A1** | COMPLETE | AST cycle scan of `core/` and `core/agent/`: none. |
 | **A2** | COMPLETE | `anthropic`, `openai`, `ollama` and `google` are imported only inside the provider modules, nested. |
-| **A3** | COMPLETE | The only commit after a freeze point is the `aa95b63` edit to `main.py`, confirmed by the owner (§13). The other 15 frozen files each have one commit and are content-pinned (V4). |
+| **A3** | COMPLETE | The only commits after a freeze point are the two `main.py` exceptions recorded in §13: `aa95b63` (confirmed by the owner) and the owner-authorized v8.44 wiring (`0c71e29`, OD-2). The other 15 frozen files each still have exactly one commit and are content-pinned (V4). |
 | **A4** | COMPLETE | Only `plan_projection` → `planner` and `skill_tool_adapter` → `skill_registry`. |
-| **A5** | COMPLETE | OD-7 is recorded (§8.1): the current `Agent` (55 methods, 1,606-line class) is accepted and only thin wiring may be added. v8.39 added only the 41-line `ask_with_tools` (pure delegation to `run_tool_loop`, pinned thin by `tests/test_agent_ask_with_tools.py`). |
+| **A5** | COMPLETE | OD-7 is recorded (§8.1): the `Agent` (now 58 methods, 1,661-line class) is accepted at its size and only thin wiring was added: `ask_with_tools` (v8.39), `live_tool_session` and `import_production_memory` (v8.41–v8.42) and `record_live_tool_outcomes` (v8.43), each pure delegation to a `core/` leaf and pinned thin by AST tests; `core.agent.__all__` is unchanged (16). |
 | **P1** | COMPLETE | `main.py` builds the Agent and uses it for every Live tool call (`live_tool_session`), run recording and the memory import; `tests/test_production_wiring.py` pins this by AST. Real-desktop behaviour is V6 (not attested). |
 | **P2** | COMPLETE | `core/live_tools.py` registers all 28 production declarations in the Agent registry and catalog (`tests/test_live_tools.py`, 48); `main.py` syncs them through `sync_declarations` in the Live config (v8.44). |
 | **P3** | COMPLETE | `LiveToolSession.handle_round` runs each Live `tool_call` batch through the router under the C8 policy (OD-C limits per run, O1 hook, O2 strings, O9 records); `main.py` routes batches through it and ends the run at `turn_complete` (v8.44). |
 | **P4** | COMPLETE | `core/production_memory.py` bridges the production SQLite memory (read-only, O3 non-sensitive rows only, idempotent, nothing written back) into the Agent; `main.py` imports it at start-up (v8.44); `tests/test_production_memory.py` (41). |
 | **P5** | COMPLETE | `core/live_run_record.py` records each production tool call (run status, step/Goal/Plan reflection, success and failure writeback, O9 record only, in-process memory) and is the session recorder in `main.py` (v8.44); `tests/test_live_run_record.py` (14). |
-| **V1** | PARTIAL | 2792 passed, but the suite needs `pytest` and `numpy`, and `pytest` is not declared in any dependency file. |
+| **V1** | COMPLETE | A fresh virtual environment built only from `requirements-dev.txt` (Linux, Python 3) ran the full suite: 2798 passed, 0 failed, 0 errors, 0 skipped. Not re-run on Windows. |
 | **V2** | COMPLETE | Each milestone has a checkpoint commit and the current head passes the suite. Historical gates were not re-run. |
 | **V3** | COMPLETE | `tests/test_architecture_freeze.py` (9 tests) and per-module AST pins pass. |
-| **V4** | PARTIAL | `tests/test_frozen_content.py` (20 tests) pins the content (SHA-256, line endings normalized) of 15 of the 16 frozen files at their single freeze-point commit, checks the pinned set against the `ROADMAP.md` Frozen Modules list, and rejects new files in `skills/`. `main.py` is deliberately unpinned until the owner confirms or reverts the §13 exception. |
+| **V4** | COMPLETE | `tests/test_frozen_content.py` (21 tests) pins the content (SHA-256, line endings normalized) of the 15 frozen files at their single freeze-point commit and pins `main.py` at the owner-authorized v8.44 content (§13); it checks the pinned set against the `ROADMAP.md` Frozen Modules list and rejects new files in `skills/`. |
 | **V5** | COMPLETE | `tests/test_production_wiring.py` (12, headless, fakes only): AST pins that `main.py` uses the Agent plus the same wiring exercised end to end with the real declarations and a real SQLite file (P1–P5). |
 | **V6** | NOT STARTED | No attestation recorded. Environment-only. |
-| **V7** | PARTIAL | `requirements.txt` omits `anthropic`, `openai`, `ollama`, `pytest`, and the speech modules' imports (`torch`, `kokoro`, `vosk`, `faster_whisper`, `edge_tts`, `miniaudio`). |
+| **V7** | COMPLETE | `requirements.txt` now declares `anthropic`, `openai` and `ollama` besides `google-genai`; `requirements-dev.txt` adds `pytest` on top of the runtime set; `tests/test_dependency_declarations.py` (5) checks that every module-level third-party import of the production code and every package the suite needs is declared. Recorded exclusions: the inherited `core/stt.py` / `core/tts.py` (`torch`, `kokoro`, `vosk`, `faster_whisper`, `edge_tts`, `miniaudio`) are imported by nothing in the production entry point and stay undeclared; imports nested in functions or `try` blocks of inherited `actions/` and `ui.py` code are optional features and were not changed. |
 | **V8** | COMPLETE | `CLAUDE.md`, `ROADMAP.md`, `readme.md` and `docs/TECHNICAL_DEBT.md` reconciled by the documentation step that recorded this contract. |
-| **V9** | PARTIAL | The CryptoJS MIT text is missing (`THIRD_PARTY_NOTICES.md` §2 records it as open). |
+| **V9** | COMPLETE | `THIRD_PARTY_NOTICES.md` §2 now carries the CryptoJS MIT licence text (the file itself is untouched) and the notices list `main.py` and `requirements.txt` as modified. OD-8 (commercial-licensing intent) is not part of V9 and stays open. |
 | Streaming, persistence, full permissions, other §7.1 areas | DEFERRED | §7. |
 
-Tally of the 29 requirements: **24 COMPLETE, 4 PARTIAL, 0 BLOCKED,
-1 NOT STARTED.** The tally is a count, not a percentage, and the items
+Tally of the 29 requirements: **28 COMPLETE, 0 PARTIAL, 0 BLOCKED,
+1 NOT STARTED.** (The one item is V6, the owner's manual attestation, which
+the agent never marks passed, §15; OD-8 stays open, §8.3.) The tally is a count, not a percentage, and the items
 are not weighted.
 
 ---
@@ -425,13 +425,11 @@ are not weighted.
 3. ~~Lock OD-2, OD-3, OD-4, OD-5 and OD-7~~ — locked 2026-10-06 (§8.1).
 4. ~~A read-only production-integration contract audit~~ — done; the plan
    is recorded in `ROADMAP.md` (v8.41–v8.45).
-5. V7 — declare dependencies and make the test environment reproducible
-   (authorized 2026-10-06; planned in v8.45).
+5. ~~V7 — declare dependencies (v8.45).~~ Complete.
 6. ~~C8 and C9 (v8.39), at library level.~~ Complete.
-7. ~~The P-series and V5 (v8.41–v8.44).~~ Complete. V4 is partial: only the `main.py` pin
-   remains (v8.45, after the authorized wiring).
+7. ~~The P-series and V5 (v8.41–v8.44).~~ Complete. V4 (v8.45) is complete.
 8. ~~C10 (v8.40+), in the OD-4b scope.~~ Complete (v8.40).
-9. V9, then V6 (the owner attestation).
+9. ~~V9 (v8.45).~~ Complete. Remaining: V6 (the owner attestation) and the owner-only items in §8.3.
 10. The completion attestation in `ROADMAP.md` (§12).
 
 Each step is formally defined and recorded in `ROADMAP.md` (protocol §25).

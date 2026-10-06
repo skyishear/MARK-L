@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.44 complete** · Active milestone: **none** · Next planned: **v8.45 Contract Closure — NOT STARTED** (production-runtime integration plan v8.41–v8.45, owner-authorized 2026-10-06)
-> Verified suite at checkpoint: **2792 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.45 complete** · Active milestone: **none** · Next planned: **none — the production-runtime integration plan v8.41–v8.45 is complete; the remaining contract items are owner-dependent (V6 attestation, OD-8)** (owner-authorized 2026-10-06)
+> Verified suite at checkpoint: **2798 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -53,8 +53,7 @@ in `docs/TECHNICAL_DEBT.md`.
 | v8.42 production memory bridge (P4; `core/production_memory.py`) | ✅ Complete |
 | v8.43 production run recording (P5; `core/live_run_record.py`) | ✅ Complete |
 | v8.44 production runtime wiring (P1, V5; scoped unfreeze of `main.py`) | ✅ Complete |
-| v8.45 contract closure (V4, V7, V9, records) | 🔲 Planned — NOT STARTED |
-| v8.45 contract closure (V7 dependencies, V9 notices, V4 `main.py` pin, A3 / A5 records) | 🔲 Planned — NOT STARTED |
+| v8.45 contract closure (V7 dependencies, V9 notices, V4 `main.py` pin, A3 / A5 records) | ✅ Complete |
 | Streaming, persistence, full permission system, voice/UI features beyond P1–P5, and the other `docs/TECHNICAL_DEBT.md` ideas | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`; promoted only by a contract amendment) |
 
 ---
@@ -66,14 +65,14 @@ EDITH is complete only as defined in `docs/EDITH_COMPLETION_CONTRACT.md`
 2026-10-05). That document is authoritative; this section does not restate
 it.
 
-- The v8.x stack is not yet connected to the production runtime
-  (`main.py` constructs an `Agent` but does not use it), so completing
-  v8.39 alone does not complete the project.
+- The v8.x stack is connected to the production runtime (v8.41–v8.44); what
+  remains of the contract is owner-dependent: V6 (manual attestation on a real
+  desktop) and OD-8 (commercial licensing), both recorded as open.
 - Requirements, owner decisions and the dated status snapshot live in the
   contract. This roadmap stays the living milestone / checkpoint record.
-- Contract V4 is partial: `tests/test_frozen_content.py` pins the content of 15
-  of the 16 frozen files; `main.py` stays unpinned until the owner resolves the
-  contract §13 exception.
+- Contract V4 is complete: `tests/test_frozen_content.py` pins the content of
+  the 15 frozen files and of `main.py` at the owner-authorized v8.44 content
+  (contract §13).
 - When the contract is satisfied, this file records "Contract v1 satisfied
   at commit `<hash>`" with the owner's sign-off.
 
@@ -757,6 +756,21 @@ it.
   2792. **Not verified here:** a real Live session (V6, owner attestation); the
   `turn_complete` run boundary is an assumption until then.
 
+- v8.45 Contract Closure (contract V1, V4, V7, V9, A3, A5) — no new runtime
+  behaviour. V7: `requirements.txt` declares `anthropic`, `openai`, `ollama`;
+  new `requirements-dev.txt` (`-r requirements.txt` + `pytest`); the inherited
+  speech modules `core/stt.py` / `core/tts.py` are imported by nothing in the
+  entry point and stay undeclared (recorded exclusion);
+  `tests/test_dependency_declarations.py` (5). V9: the CryptoJS MIT licence text
+  is in `THIRD_PARTY_NOTICES.md`, which also lists `main.py` and
+  `requirements.txt` as modified. V4: `main.py` is pinned at the authorized v8.44
+  content (`tests/test_frozen_content.py`, 21). A3 / A5 and the §13 table
+  recorded in the contract. V1: a fresh virtual environment built only from
+  `requirements-dev.txt` ran the full suite, 2798 passed (Linux). Contract
+  tally: 28 COMPLETE, 1 NOT STARTED (V6). **Open, owner-only:** V6 (not
+  attested) and OD-8 (commercial licensing, undecided). EDITH is therefore not
+  declared complete: the contract needs the owner's attestation and sign-off.
+
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
 
@@ -764,14 +778,14 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.44 — Production Runtime Wiring: COMPLETE.**
+**v8.45 — Contract Closure: COMPLETE.**
 
-- Full suite: 2792 passed, 0 failed, 0 errors, 0 skipped.
-- Production changes: scoped `main.py` wiring only (frozen legacy modules zero
-  diff); new `tests/test_production_wiring.py`.
-- The production runtime now runs Live tool calls through the v8.x tool stack
-  with run recording and the memory bridge. Real-desktop verification is V6
-  (owner attestation, not performed).
+- Full suite: 2798 passed, 0 failed, 0 errors, 0 skipped (also in a clean
+  virtual environment built from `requirements-dev.txt`).
+- Every contract requirement an agent can verify is COMPLETE (28 of 29). Left:
+  V6 (the owner's real-desktop attestation, contract §15) and OD-8.
+- No further milestone is planned; new work needs a contract amendment or the
+  owner's V6 findings.
 
 ---
 
@@ -1209,7 +1223,7 @@ import checks, `git diff` scope check._
   and imports the memory bridge, with all logic in the new `core/` modules;
   headless tests (V5) cover P1–P5 with fakes and pin that `main.py` uses the
   Agent. *Prerequisites:* v8.41–v8.43.
-- **v8.45 Contract Closure.** *Objective:* V7 (declare `anthropic`, `openai`,
+- **v8.45 Contract Closure — COMPLETE (see history above).** *Objective:* V7 (declare `anthropic`, `openai`,
   `ollama` and the test dependency), V9 (restore the CryptoJS MIT licence text),
   V4 (pin the authorized `main.py` content), A3 / A5 records, and the contract
   snapshot. *Exclusions:* OD-8 stays open; V6 stays the owner's attestation.

@@ -30,12 +30,14 @@ included with the imported snapshot.
 **Derived material retained in this repository:**
 
 - `main.py` — **modified** (Agent composition-root integration; one
-  prompt/schema example value)
+  prompt/schema example value; the v8.44 tool-session, run-recording and
+  memory wiring)
 - `core/problem_solver.py` — **modified** (Agent / memory integration)
 - `ui.py`, `setup.py` — modified (one display string each: project name)
 - `.gitignore` — modified
+- `requirements.txt` — **modified** (v8.45: `anthropic`, `openai`, `ollama`
+  declared)
 - Retained without modification:
-  - `requirements.txt`
   - `actions/` (all modules)
   - `dashboard/` (except the CryptoJS file noted in section 2)
   - `memory/` (`__init__.py`, `config_manager.py`, `core_memory.py`,
@@ -60,6 +62,33 @@ governance documents — was developed as part of MARK-L.
 not covered by section 1. CryptoJS is distributed by its authors under
 the **MIT License**.
 
-The imported file does not carry its license header or copyright notice.
-Restoring the CryptoJS MIT license text alongside this file is an open
-item.
+The imported file does not carry its license header or copyright notice;
+the file is retained byte-for-byte and the license text is therefore
+reproduced here, as published by the CryptoJS project
+(<https://github.com/brix/crypto-js/blob/develop/LICENSE>):
+
+> The MIT License (MIT)
+>
+> Copyright (c) 2009-2013 Jeff Mott
+> Copyright (c) 2013-2016 Evan Vosberg
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in
+> all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+> THE SOFTWARE.
+
+The copy in this repository does not identify its version; the copyright
+holders above are those of the upstream project's published license.

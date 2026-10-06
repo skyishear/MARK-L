@@ -6,11 +6,10 @@ one commit in git (its introduction is its freeze point), so its SHA-256 at
 that commit is pinned here. Line endings are normalized before hashing, so a
 Windows checkout (CRLF) hashes the same as a Linux one.
 
-``main.py`` is the one frozen file deliberately **not** pinned: it carries the
-recorded exception in ``docs/EDITH_COMPLETION_CONTRACT.md`` §13 (commit
-``aa95b63``), which awaits the owner's confirmation. Until the owner confirms
-or reverts it, V4 is partial and this file says so explicitly instead of
-silently pinning the exception.
+``main.py`` is pinned separately (``AUTHORIZED_SHA256``): it carries the
+exceptions recorded in ``docs/EDITH_COMPLETION_CONTRACT.md`` §13 (commit
+``aa95b63``, confirmed by the owner, and the owner-authorized v8.44 wiring), so
+its pin is the authorized content, not a freeze-point commit.
 
 A change to a pinned file must be an explicit, owner-authorized milestone that
 updates its pin in the same change (``ROADMAP.md`` Frozen Modules).
@@ -44,7 +43,10 @@ FROZEN_SHA256: dict[str, tuple[str, str]] = {
     "skills/spotify.py": ("154d7743d2dcf68c1b3268a12276b47aa35a0ed19caa73480fa55e845989ee2a", "b1b1709"),
     "skills/weather.py": ("576b36b359bc3ec0f49f6ad69720f0fc4e410b6a43b50fcdf9ed7201775991f8", "b1b1709"),
 }
-UNPINNED_PENDING_OWNER = "main.py"  # contract §13: recorded exception awaiting owner confirmation
+# Owner-authorized content (contract §13): main.py after the v8.44 scoped unfreeze (OD-2).
+AUTHORIZED_SHA256: dict[str, tuple[str, str]] = {
+    "main.py": ("b4193c049141c94adb5c883f2bb8946ddf83c3a7b68d0fd978dc90792b8db821", "v8.44"),
+}
 
 
 def _digest(relative: str) -> str:
@@ -52,9 +54,9 @@ def _digest(relative: str) -> str:
         return hashlib.sha256(f.read().replace(b"\r\n", b"\n")).hexdigest()
 
 
-@pytest.mark.parametrize("relative", sorted(FROZEN_SHA256))
+@pytest.mark.parametrize("relative", sorted({**FROZEN_SHA256, **AUTHORIZED_SHA256}))
 def test_frozen_module_content_is_unchanged(relative: str) -> None:
-    expected, freeze_commit = FROZEN_SHA256[relative]
+    expected, freeze_commit = {**FROZEN_SHA256, **AUTHORIZED_SHA256}[relative]
     assert _digest(relative) == expected, (
         f"{relative} differs from its freeze point ({freeze_commit}); frozen modules change only "
         "through an explicit, owner-authorized milestone that also updates this pin"
@@ -83,7 +85,7 @@ def test_every_roadmap_frozen_module_is_pinned_or_documented_pending() -> None:
     for path in listed:
         if path == "skills/*":
             continue
-        assert path in FROZEN_SHA256 or path == UNPINNED_PENDING_OWNER, path
+        assert path in FROZEN_SHA256 or path in AUTHORIZED_SHA256, path
 
 
 def test_every_pin_is_a_roadmap_frozen_module() -> None:
@@ -92,9 +94,9 @@ def test_every_pin_is_a_roadmap_frozen_module() -> None:
         assert path in listed or (path.startswith("skills/") and "skills/*" in listed), path
 
 
-def test_main_py_is_the_single_documented_unpinned_exception() -> None:
-    assert UNPINNED_PENDING_OWNER not in FROZEN_SHA256
+def test_main_py_is_the_single_authorized_exception_and_is_recorded() -> None:
+    assert set(AUTHORIZED_SHA256) == {"main.py"} and "main.py" not in FROZEN_SHA256
     with open(os.path.join(ROOT, "docs", "EDITH_COMPLETION_CONTRACT.md"), encoding="utf-8") as f:
         contract = f.read()
     section = contract[contract.index("## 13. Recorded exceptions"):contract.index("## 14. Amendment log")]
-    assert "main.py" in section and "aa95b63" in section
+    assert "main.py" in section and "aa95b63" in section and "v8.44" in section
