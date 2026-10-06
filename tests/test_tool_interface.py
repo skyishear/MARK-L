@@ -355,7 +355,7 @@ class TestArchitecturalIsolation:
             # tool_router.py (v8.14) are the sanctioned consumers.
             if name.endswith(".py") and name not in (
                 "tool_interface.py", "tool_registry.py", "skill_tool_adapter.py",
-                "tool_router.py", "tool_runtime.py",  # v8.39: the loop builds ToolRequests
+                "tool_router.py", "tool_runtime.py", "live_tools.py",  # v8.39 / v8.41: the loop and the bridge build ToolRequests / ToolResults
             ):
                 with open(path, encoding="utf-8") as f:
                     assert "tool_interface" not in f.read(), name

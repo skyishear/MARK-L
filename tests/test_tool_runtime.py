@@ -522,7 +522,7 @@ class TestArchitecture:
 
     def test_public_surface(self) -> None:
         assert rt.__all__ == ["MAX_MODEL_ROUNDS", "MAX_TOOL_EXECUTIONS", "ToolCallOutcome", "ToolLoopExhaustedError",
-                              "ToolLoopResult", "run_tool_loop"]
+                              "ToolLoopResult", "ToolRun", "run_tool_loop"]  # v8.41: + the shared per-run policy
 
     def test_nothing_else_in_core_imports_the_leaf_except_the_agent(self) -> None:
         core_dir = os.path.dirname(rt.__file__)
@@ -531,6 +531,8 @@ class TestArchitecture:
                 if name.endswith(".py") and name != "tool_runtime.py":
                     path = os.path.join(dirpath, name)
                     if os.path.basename(dirpath) == "agent" and name == "__init__.py":
+                        continue
+                    if name == "live_tools.py":  # v8.41: shares the per-run policy
                         continue
                     assert "tool_runtime" not in open(path, encoding="utf-8").read(), path
 

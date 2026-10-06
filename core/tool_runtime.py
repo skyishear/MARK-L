@@ -35,6 +35,11 @@ Owner-locked policy (see ``docs/EDITH_COMPLETION_CONTRACT.md`` §8.1):
   (``call_id``, ``tool_name``, ``outcome``, ``exception_type`` for a failure) and
   writes nothing.
 
+``ToolRun`` holds that per-call policy and the per-run counters on their own, so
+the v8.39 loop (``run_tool_loop``) and the production Gemini Live adapter
+(``core/live_tools.py``, v8.41) apply exactly the same rules from one
+implementation. A run owns its counters; nothing is shared between runs.
+
 Dependency direction:
 
     Agent  →  tool_runtime  →  ai_provider, tool_calling, tool_interface
@@ -58,6 +63,7 @@ __all__ = [
     "ToolCallOutcome",
     "ToolLoopExhaustedError",
     "ToolLoopResult",
+    "ToolRun",
     "run_tool_loop",
 ]
 
@@ -143,6 +149,100 @@ def _failure(call: ToolCall, exc: Exception) -> tuple[ToolCallResult, ToolCallOu
     )
 
 
+class ToolRun:
+    """The per-run tool policy and counters (owner decisions O1, O2, O9, OD-C).
+
+    ``process_round(calls)`` handles the tool calls of **one model response**: it
+    counts the round, raises ``ToolLoopExhaustedError`` when the response is the
+    ``MAX_MODEL_ROUNDS``-th to ask for tools (those calls are not run), and
+    otherwise refuses or executes each call in order — offered / registered
+    gates, then the ``MAX_TOOL_EXECUTIONS`` check, then the ``confirm`` hook for
+    a tool whose ``side_effects`` is not exactly ``False``, then one router
+    invocation — returning one ``ToolCallResult`` per call. ``outcomes`` is the
+    O9 audit trail; nothing is written anywhere.
+    """
+
+    __slots__ = ("_specs", "_tools", "_router", "_registry", "_confirm", "_rounds", "_executions", "_outcomes")
+
+    def __init__(
+        self,
+        *,
+        tools: Sequence[Any],
+        router: Any,
+        registry: Any,
+        confirm: Optional[Callable[[ToolCall, Any], bool]] = None,
+    ) -> None:
+        if not callable(getattr(router, "route", None)):
+            raise TypeError("router must provide route(request)")
+        if not callable(getattr(registry, "has", None)):
+            raise TypeError("registry must provide has(name)")
+        if confirm is not None and not callable(confirm):
+            raise TypeError("confirm must be callable or None")
+        offered = AIRequest(prompt="", tools=tuple(tools)).tools
+        if not offered:
+            raise ValueError("tools must not be empty")
+        self._tools = offered
+        self._specs = {spec.name: spec for spec in offered}
+        self._router = router
+        self._registry = registry
+        self._confirm = confirm
+        self._rounds = 0
+        self._executions = 0
+        self._outcomes: list[ToolCallOutcome] = []
+
+    @property
+    def tools(self) -> tuple[Any, ...]:
+        """The declarations offered for this run (validated, in order)."""
+        return self._tools
+
+    @property
+    def rounds(self) -> int:
+        """Model responses that asked for tools so far (the current one included)."""
+        return self._rounds
+
+    @property
+    def tool_executions(self) -> int:
+        return self._executions
+
+    @property
+    def outcomes(self) -> tuple[ToolCallOutcome, ...]:
+        return tuple(self._outcomes)
+
+    def process_round(self, calls: Sequence[ToolCall]) -> tuple[ToolCallResult, ...]:
+        self._rounds += 1
+        if self._rounds >= MAX_MODEL_ROUNDS:
+            raise ToolLoopExhaustedError("model_rounds", self._rounds, self._executions, self.outcomes)
+        results: list[ToolCallResult] = []
+        for call in calls:
+            spec = self._specs.get(call.name)
+            if spec is None:
+                result, outcome = _refusal(call, "not_offered")
+            elif self._registry.has(call.name) is not True:
+                result, outcome = _refusal(call, "not_registered")
+            else:
+                if self._executions >= MAX_TOOL_EXECUTIONS:
+                    raise ToolLoopExhaustedError(
+                        "tool_executions", self._rounds, self._executions, self.outcomes
+                    )
+                if spec.side_effects is not False and not (
+                    self._confirm is not None and self._confirm(call, spec) is True
+                ):
+                    result, outcome = _refusal(call, "confirmation_denied")
+                else:
+                    self._executions += 1
+                    try:
+                        tool_result = self._router.route(
+                            ToolRequest(tool_name=call.name, arguments=call.arguments)
+                        )
+                        result = ToolCallResult(call.call_id, call.name, tool_result.output)
+                        outcome = ToolCallOutcome(call.call_id, call.name, "executed")
+                    except Exception as exc:  # noqa: BLE001 - converted per O2; BaseException propagates
+                        result, outcome = _failure(call, exc)
+            results.append(result)
+            self._outcomes.append(outcome)
+        return tuple(results)
+
+
 def run_tool_loop(
     complete: Callable[[AIRequest], AIResponse],
     *,
@@ -159,7 +259,8 @@ def run_tool_loop(
     declarations offered for the whole run (non-empty, ``model_invocable``,
     validated by ``AIRequest``); ``router.route(ToolRequest)`` executes a tool
     and ``registry.has(name)`` says whether it is registered; ``confirm``
-    (``(call, spec) -> bool``) approves side-effecting calls.
+    (``(call, spec) -> bool``) approves side-effecting calls. The per-call rules
+    and the limits live in ``ToolRun``.
 
     Raises:
         TypeError / ValueError: invalid arguments (including empty ``tools``).
@@ -168,53 +269,12 @@ def run_tool_loop(
     """
     if not callable(complete):
         raise TypeError("complete must be callable")
-    if not callable(getattr(router, "route", None)):
-        raise TypeError("router must provide route(request)")
-    if not callable(getattr(registry, "has", None)):
-        raise TypeError("registry must provide has(name)")
-    if confirm is not None and not callable(confirm):
-        raise TypeError("confirm must be callable or None")
-    offered = AIRequest(prompt=prompt, tools=tuple(tools)).tools
-    if not offered:
-        raise ValueError("tools must not be empty")
-    specs = {spec.name: spec for spec in offered}
-
+    run = ToolRun(tools=tools, router=router, registry=registry, confirm=confirm)
     exchanges: list[ToolExchange] = []
-    outcomes: list[ToolCallOutcome] = []
-    executions = 0
     for round_number in range(1, MAX_MODEL_ROUNDS + 1):
-        response = complete(AIRequest(prompt=prompt, tools=offered, tool_exchanges=tuple(exchanges)))
+        response = complete(AIRequest(prompt=prompt, tools=run.tools, tool_exchanges=tuple(exchanges)))
         if not response.tool_calls:
-            return ToolLoopResult(response, tuple(outcomes), round_number, executions)
-        if round_number == MAX_MODEL_ROUNDS:
-            raise ToolLoopExhaustedError("model_rounds", round_number, executions, tuple(outcomes))
-        results: list[ToolCallResult] = []
-        for call in response.tool_calls:
-            spec = specs.get(call.name)
-            if spec is None:
-                result, outcome = _refusal(call, "not_offered")
-            elif registry.has(call.name) is not True:
-                result, outcome = _refusal(call, "not_registered")
-            else:
-                if executions >= MAX_TOOL_EXECUTIONS:
-                    raise ToolLoopExhaustedError(
-                        "tool_executions", round_number, executions, tuple(outcomes)
-                    )
-                if spec.side_effects is not False and not (
-                    confirm is not None and confirm(call, spec) is True
-                ):
-                    result, outcome = _refusal(call, "confirmation_denied")
-                else:
-                    executions += 1
-                    try:
-                        tool_result = router.route(
-                            ToolRequest(tool_name=call.name, arguments=call.arguments)
-                        )
-                        result = ToolCallResult(call.call_id, call.name, tool_result.output)
-                        outcome = ToolCallOutcome(call.call_id, call.name, "executed")
-                    except Exception as exc:  # noqa: BLE001 - converted per O2; BaseException propagates
-                        result, outcome = _failure(call, exc)
-            results.append(result)
-            outcomes.append(outcome)
-        exchanges.append(ToolExchange(calls=response.tool_calls, results=tuple(results), text=response.text))
-    raise ToolLoopExhaustedError("model_rounds", MAX_MODEL_ROUNDS, executions, tuple(outcomes))  # pragma: no cover
+            return ToolLoopResult(response, run.outcomes, round_number, run.tool_executions)
+        results = run.process_round(response.tool_calls)
+        exchanges.append(ToolExchange(calls=response.tool_calls, results=results, text=response.text))
+    raise ToolLoopExhaustedError("model_rounds", MAX_MODEL_ROUNDS, run.tool_executions, run.outcomes)  # pragma: no cover

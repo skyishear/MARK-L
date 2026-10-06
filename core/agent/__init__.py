@@ -57,6 +57,7 @@ from core.tool_dispatch import ToolDispatchDecision, build_tool_dispatch_decisio
 from core.tool_interface import ToolRequest, ToolResult, TransientToolError
 from core.tool_registry import ToolRegistry
 from core.tool_catalog import ToolCatalog
+from core.live_tools import LiveToolSession
 from core.tool_router import ToolNotFoundError, ToolRouter
 from core.tool_runtime import ToolLoopResult, run_tool_loop
 
@@ -1726,3 +1727,27 @@ class Agent:
         self._conversation_history.append_user(prompt)
         self._conversation_history.append_assistant(result.response.text)
         return result
+
+    def live_tool_session(
+        self,
+        *,
+        execute: Callable[..., Any],
+        confirm: Callable[[Any, Any], bool] | None = None,
+        recorder: Callable[[Any], None] | None = None,
+    ) -> LiveToolSession:
+        """A production tool session bound to this Agent's tool router, registry
+        and catalog (v8.41; thin wiring over ``core.live_tools``).
+
+        The caller supplies the production executor (``async (name, arguments)
+        -> mapping``), the O1 confirmation hook and an optional recorder; the
+        session registers the production tool declarations here and runs the
+        calls of a Gemini Live session under the C8 per-call policy.
+        """
+        return LiveToolSession(
+            router=self.tool_router,
+            registry=self.tool_registry,
+            catalog=self.tool_catalog,
+            execute=execute,
+            confirm=confirm,
+            recorder=recorder,
+        )

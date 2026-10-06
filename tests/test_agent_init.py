@@ -518,6 +518,7 @@ class TestNoForbiddenIntegration:
             "core.tool_catalog",
             "core.memory_context",
             "core.tool_runtime",  # v8.39
+            "core.live_tools",  # v8.41
             "datetime",
             "types",
             "typing",

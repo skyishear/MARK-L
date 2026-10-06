@@ -392,7 +392,7 @@ class TestArchitecture:
         # v8.32: the Agent (composition root) is a sanctioned consumer;
         # v8.38: so is the neutral AI boundary (AIRequest.tools: ToolSpec).
         for name in os.listdir(CORE_DIR):
-            if name.endswith(".py") and name not in ("tool_catalog.py", "ai_provider.py"):
+            if name.endswith(".py") and name not in ("tool_catalog.py", "ai_provider.py", "live_tools.py"):  # v8.41: the production bridge builds ToolSpecs
                 with open(os.path.join(CORE_DIR, name), encoding="utf-8") as f:
                     assert "tool_catalog" not in f.read(), name
         with open(os.path.join(CORE_DIR, "agent", "__init__.py"), encoding="utf-8") as f:

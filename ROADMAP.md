@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.40 complete** · Active milestone: **none** · Next planned: **v8.41 Production Tool Bridge — NOT STARTED** (production-runtime integration plan v8.41–v8.46, owner-authorized 2026-10-06)
-> Verified suite at checkpoint: **2677 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.41 complete** · Active milestone: **none** · Next planned: **v8.42 Production Memory Bridge — NOT STARTED** (production-runtime integration plan v8.41–v8.45, owner-authorized 2026-10-06)
+> Verified suite at checkpoint: **2725 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -49,7 +49,7 @@ in `docs/TECHNICAL_DEBT.md`.
 | v8.38 first provider tool-call normalization (Anthropic) | ✅ Complete |
 | v8.39 tool runtime loop (model↔tool execution loop, `core/tool_runtime.py`) | ✅ Complete |
 | v8.40 tool calling on the remaining providers (OpenAI, Gemini, Ollama) | ✅ Complete |
-| v8.41 production tool bridge (P2, P3: Gemini Live adapter, tool registration) | 🔲 Planned — NOT STARTED |
+| v8.41 production tool bridge (P2, P3: Gemini Live adapter, tool registration; `core/live_tools.py`) | ✅ Complete |
 | v8.42 production memory bridge (P4) | 🔲 Planned — NOT STARTED |
 | v8.43 production run recording (P5) | 🔲 Planned — NOT STARTED |
 | v8.44 production runtime wiring (P1, V5; scoped unfreeze of `main.py`) | 🔲 Planned — NOT STARTED |
@@ -657,6 +657,42 @@ it.
   to V6): the Gemini history shape `{"role", "content"}` and Ollama's
   `generate(messages=...)` are not valid against the real SDKs on the
   non-tool path.
+- v8.41 Production Tool Bridge (contract P2, P3; owner decisions OD-2, OD-3) —
+  new `core/live_tools.py` and a behaviour-preserving extraction in
+  `core/tool_runtime.py`. **`ToolRun`** now owns the per-run policy and counters
+  (offered / registered gates, the `MAX_TOOL_EXECUTIONS` check before the O1
+  hook, the hook for a tool whose `side_effects` is not exactly `False`, one
+  router invocation, O2 strings, O9 records, the 5-round rule) and is used by
+  both `run_tool_loop` and the Live adapter, so there is one implementation of
+  the policy; every v8.39 test passed unchanged. **`declaration_to_spec`**
+  converts a production Gemini-format declaration into a model-invocable
+  `ToolSpec` (types lower-cased; any keyword outside the catalog subset fails
+  loudly); only `READ_ONLY_TOOLS` (`web_search`, `system_status`,
+  `recall_memory`, `solve_problem`) are marked free of side effects, every other
+  production tool keeps `side_effects=True`, `idempotent=False`. All 28
+  production declarations (the 26 in `main.py` and the weather / Spotify skills)
+  convert. **`CallbackTool`** (`ToolInterface`) runs the production executor.
+  **`LiveToolSession`** registers the declarations in the Agent's registry and
+  catalog (`sync_declarations`, idempotent, returns the declarations unchanged)
+  and executes each Live `tool_call` batch — one model round — through the
+  router under the C8 policy (`handle_round`): the production coroutine runs on
+  the session's event loop while the router runs in a worker thread; an
+  executed call is answered with the production response exactly, a refusal or
+  failure with the sanitized string; when a limit is reached the calls already
+  handled keep their real answer and every other call of the batch (and of the
+  rest of the run) gets `error: failed (ToolLoopExhaustedError)` until
+  `end_run()` (the model's turn is over). `approve_requested_call` is the
+  production confirmation hook (the user's spoken request is the confirmation;
+  the owner-identity / PIN gate for high-risk actions stays inside the
+  production executor with its guidance to the model). An optional recorder
+  receives the new O9 outcomes after each round and can never break a call.
+  One thin `Agent.live_tool_session(*, execute, confirm=None, recorder=None)`.
+  No SDK import; router and registry are injected. Sanctioned pin updates
+  (minimum): Agent import allowlists (+`core.live_tools`); `tool_catalog` /
+  `tool_interface` / `tool_calling` / `tool_runtime` consumer allowlists
+  (+`live_tools`); the `tool_runtime` public surface (+`ToolRun`). Verified: 48
+  new focused, full suite 2725. Assumption for V6: a Live `turn_complete` is not
+  sent between a `tool_call` and its tool response.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -665,15 +701,15 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.40 — Tool Calling on the Remaining Providers: COMPLETE.**
+**v8.41 — Production Tool Bridge: COMPLETE.**
 
-- Full suite: 2677 passed, 0 failed, 0 errors, 0 skipped.
-- Production changes only in `core/openai_provider.py`,
-  `core/gemini_provider.py` and `core/ollama_provider.py`; frozen legacy
+- Full suite: 2725 passed, 0 failed, 0 errors, 0 skipped.
+- Production changes: new `core/live_tools.py`, the `ToolRun` extraction in
+  `core/tool_runtime.py`, and the thin `Agent.live_tool_session`; frozen legacy
   modules and `main.py` zero diff.
-- All four built-in providers support tool calling (v8.39 loop included). The
-  v8.x stack is still not connected to the production runtime (`main.py`
-  builds an `Agent` and does not use it); that is the v8.41–v8.45 plan.
+- The production tools can be registered in, and Gemini Live tool calls run
+  through, the v8.x tool stack under the C8 policy. `main.py` is not wired yet
+  (v8.44), so the production runtime still does not use it.
 
 ---
 
@@ -1077,7 +1113,7 @@ scoped `main.py` wiring (OD-2), OD-8 (licensing intent) and V6 (owner
 attestation). Common verification: focused tests, full suite, architecture and
 import checks, `git diff` scope check._
 
-- **v8.41 Production Tool Bridge (P2, P3).** *Objective:* a provider-neutral
+- **v8.41 Production Tool Bridge (P2, P3) — COMPLETE (see history above).** *Objective:* a provider-neutral
   adapter, new `core/live_tools.py`, that (a) converts the production Gemini-
   format declarations into `ToolSpec`s and registers a callback tool per
   production tool in the Agent's `ToolRegistry` / `ToolCatalog`, and (b) executes
