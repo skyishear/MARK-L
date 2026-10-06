@@ -693,6 +693,27 @@ it.
   (+`live_tools`); the `tool_runtime` public surface (+`ToolRun`). Verified: 48
   new focused, full suite 2725. Assumption for V6: a Live `turn_complete` is not
   sent between a `tool_call` and its tool response.
+- v8.42 Production Memory Bridge (contract P4; owner decisions OD-4, OD-5) — new
+  `core/production_memory.py`, an additive read-only reader
+  `memory.core_memory.read_memories`, and one thin
+  `Agent.import_production_memory(read)`. The bridge copies the production
+  SQLite memory into the Agent's in-process `MemoryEngine` so v8.36 memory
+  injection can see it; nothing is written back to the production store and
+  nothing is persisted. **O3 at the door:** only a row whose `sensitive` flag is
+  `False` or the integer `0` is copied; a sensitive row, or one whose flag is
+  missing, `None` or anything else, is never copied (counted as skipped). Copied
+  entries carry `source="production_memory"` and `sensitive=False`. **Idempotent:**
+  an entry already present (same category, key, project, value, source) is left
+  alone; a value changed in production is added as a new entry (the engine has no
+  update or per-source delete), so the import is a snapshot, not a mirror. The
+  reader is a pure `SELECT` — unlike `recall` it does not touch `last_used` and
+  never prunes — excludes expired rows and, by default, sensitive rows. The
+  leaf is stdlib-only and performs no database access (rows come from the
+  caller). Tested against a real SQLite file in a temp directory. Sanctioned
+  pin updates (minimum): Agent import allowlists (+`core.production_memory`).
+  Verified: 41 new focused, full suite 2766. The Live runtime does not use
+  `AIService`, so this memory serves the v8.x request paths (`ask`,
+  `ask_with_tools`); wiring it at startup is v8.44.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -701,15 +722,16 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.41 — Production Tool Bridge: COMPLETE.**
+**v8.42 — Production Memory Bridge: COMPLETE.**
 
-- Full suite: 2725 passed, 0 failed, 0 errors, 0 skipped.
-- Production changes: new `core/live_tools.py`, the `ToolRun` extraction in
-  `core/tool_runtime.py`, and the thin `Agent.live_tool_session`; frozen legacy
-  modules and `main.py` zero diff.
-- The production tools can be registered in, and Gemini Live tool calls run
-  through, the v8.x tool stack under the C8 policy. `main.py` is not wired yet
-  (v8.44), so the production runtime still does not use it.
+- Full suite: 2766 passed, 0 failed, 0 errors, 0 skipped.
+- Production changes: new `core/production_memory.py`, the additive read-only
+  `memory.core_memory.read_memories`, and the thin
+  `Agent.import_production_memory`; frozen legacy modules and `main.py` zero
+  diff.
+- The production memory can reach the v8.x memory injection (non-sensitive rows
+  only). `main.py` is not wired yet (v8.44), so the production runtime still
+  does not use the v8.x stack.
 
 ---
 
@@ -1128,7 +1150,7 @@ import checks, `git diff` scope check._
   `tool_runtime`, thin `Agent` wiring (OD-7). *Exclusions:* `main.py`; the
   production confirmation hook keeps the existing identity / PIN gate inside the
   legacy executor.
-- **v8.42 Production Memory Bridge (P4).** *Objective:* a read-only, one-way
+- **v8.42 Production Memory Bridge (P4) — COMPLETE (see history above).** *Objective:* a read-only, one-way
   bridge, new `core/production_memory.py`, copying the production SQLite memory
   into the Agent's in-process `MemoryEngine`, honouring O3 (an entry is
   injectable only if explicitly marked non-sensitive) and OD-5 (nothing is

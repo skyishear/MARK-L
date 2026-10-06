@@ -397,9 +397,9 @@ re-evaluate §9 against the repository and never against this table.
 | **P1** | NOT STARTED | `main.py:684` builds `Agent()`; `self._agent` is never read. OD-2 is locked (scoped unfreeze); planned as v8.44. |
 | **P2** | PARTIAL | `core/live_tools.py` converts and registers all 28 production declarations (the 26 in `main.py` plus the weather and Spotify skills) in the Agent's registry and catalog (`tests/test_live_tools.py`, 48 tests). Not yet called from `main.py` (v8.44). |
 | **P3** | PARTIAL | `LiveToolSession.handle_round` runs a Gemini Live `tool_call` batch through the router under the C8 policy, sharing `ToolRun` with the v8.39 loop (OD-C limits per run, O1 hook, O2 strings, O9 records). Not yet called from `main.py` (v8.44). |
-| **P4** | NOT STARTED | Production memory is SQLite (`memory/core_memory.py:39`); `MemoryEngine` is in-process (`core/memory_engine.py:1`). OD-4 / OD-5 are locked; the bridge is planned as v8.42. |
+| **P4** | PARTIAL | `core/production_memory.py` copies the production SQLite memory into the Agent's in-process `MemoryEngine` through the read-only `memory.core_memory.read_memories` (OD-4, OD-5): O3 at the door (only explicit non-sensitive rows), idempotent, nothing written back, nothing persisted; `tests/test_production_memory.py` (41, real SQLite in a temp directory). Not yet called from `main.py` (v8.44). |
 | **P5** | NOT STARTED | No production code path calls any lifecycle or writeback method. Planned as v8.43. |
-| **V1** | PARTIAL | 2725 passed, but the suite needs `pytest` and `numpy`, and `pytest` is not declared in any dependency file. |
+| **V1** | PARTIAL | 2766 passed, but the suite needs `pytest` and `numpy`, and `pytest` is not declared in any dependency file. |
 | **V2** | COMPLETE | Each milestone has a checkpoint commit and the current head passes the suite. Historical gates were not re-run. |
 | **V3** | COMPLETE | `tests/test_architecture_freeze.py` (9 tests) and per-module AST pins pass. |
 | **V4** | PARTIAL | `tests/test_frozen_content.py` (20 tests) pins the content (SHA-256, line endings normalized) of 15 of the 16 frozen files at their single freeze-point commit, checks the pinned set against the `ROADMAP.md` Frozen Modules list, and rejects new files in `skills/`. `main.py` is deliberately unpinned until the owner confirms or reverts the §13 exception. |
@@ -410,8 +410,8 @@ re-evaluate §9 against the repository and never against this table.
 | **V9** | PARTIAL | The CryptoJS MIT text is missing (`THIRD_PARTY_NOTICES.md` §2 records it as open). |
 | Streaming, persistence, full permissions, other §7.1 areas | DEFERRED | §7. |
 
-Tally of the 29 requirements: **18 COMPLETE, 6 PARTIAL, 0 BLOCKED,
-5 NOT STARTED.** The tally is a count, not a percentage, and the items
+Tally of the 29 requirements: **18 COMPLETE, 7 PARTIAL, 0 BLOCKED,
+4 NOT STARTED.** The tally is a count, not a percentage, and the items
 are not weighted.
 
 ---
