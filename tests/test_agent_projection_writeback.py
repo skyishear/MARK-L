@@ -270,7 +270,7 @@ class TestArchitecture:
             tree = ast.parse(f.read())
         modules = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
         assert "core.stage_dispatch" in modules and "core.plan_projection" in modules
-        assert len([m for m in modules if m.startswith("core.")]) == 42  # v8.24: 34; v8.25 added core.lifecycle_reflection; v8.26 core.step_lifecycle; v8.28 core.execution_failure; v8.30 core.failure_taxonomy; v8.32 core.tool_catalog; v8.36 core.memory_context; v8.39 core.tool_runtime; v8.41 core.live_tools
+        assert len([m for m in modules if m.startswith("core.")]) == 43  # v8.24: 34; v8.25 added core.lifecycle_reflection; v8.26 core.step_lifecycle; v8.28 core.execution_failure; v8.30 core.failure_taxonomy; v8.32 core.tool_catalog; v8.36 core.memory_context; v8.39 core.tool_runtime; v8.41 core.live_tools; v8.42 core.production_memory
 
     def test_all_unchanged(self) -> None:
         assert len(agent_module.__all__) == 16

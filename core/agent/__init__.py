@@ -58,6 +58,7 @@ from core.tool_interface import ToolRequest, ToolResult, TransientToolError
 from core.tool_registry import ToolRegistry
 from core.tool_catalog import ToolCatalog
 from core.live_tools import LiveToolSession
+from core.production_memory import ProductionMemoryImport, import_production_memory
 from core.tool_router import ToolNotFoundError, ToolRouter
 from core.tool_runtime import ToolLoopResult, run_tool_loop
 
@@ -1751,3 +1752,10 @@ class Agent:
             confirm=confirm,
             recorder=recorder,
         )
+
+    def import_production_memory(self, read: Callable[[], Any]) -> ProductionMemoryImport:
+        """Copy the explicitly non-sensitive rows returned by ``read()`` (the
+        production memory reader) into this Agent's in-process ``MemoryEngine``
+        (v8.42; thin wiring over ``core.production_memory``): read-only, one-way,
+        nothing persisted, sensitive rows never copied (O3)."""
+        return import_production_memory(self._memory_engine, read())

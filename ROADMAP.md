@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.41 complete** · Active milestone: **none** · Next planned: **v8.42 Production Memory Bridge — NOT STARTED** (production-runtime integration plan v8.41–v8.45, owner-authorized 2026-10-06)
-> Verified suite at checkpoint: **2725 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.42 complete** · Active milestone: **none** · Next planned: **v8.43 Production Run Recording — NOT STARTED** (production-runtime integration plan v8.41–v8.45, owner-authorized 2026-10-06)
+> Verified suite at checkpoint: **2766 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -50,7 +50,7 @@ in `docs/TECHNICAL_DEBT.md`.
 | v8.39 tool runtime loop (model↔tool execution loop, `core/tool_runtime.py`) | ✅ Complete |
 | v8.40 tool calling on the remaining providers (OpenAI, Gemini, Ollama) | ✅ Complete |
 | v8.41 production tool bridge (P2, P3: Gemini Live adapter, tool registration; `core/live_tools.py`) | ✅ Complete |
-| v8.42 production memory bridge (P4) | 🔲 Planned — NOT STARTED |
+| v8.42 production memory bridge (P4; `core/production_memory.py`) | ✅ Complete |
 | v8.43 production run recording (P5) | 🔲 Planned — NOT STARTED |
 | v8.44 production runtime wiring (P1, V5; scoped unfreeze of `main.py`) | 🔲 Planned — NOT STARTED |
 | v8.45 contract closure (V7 dependencies, V9 notices, V4 `main.py` pin, A3 / A5 records) | 🔲 Planned — NOT STARTED |

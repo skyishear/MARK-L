@@ -216,6 +216,26 @@ def recall(*, query: str | None = None, category: str | None = None,
     return [dict(r) for r in rows]
 
 
+def read_memories(*, include_sensitive: bool = False, limit: int = 1000) -> list[dict]:
+    """Read-only snapshot of the stored facts (the v8.42 bridge's reader).
+
+    Unlike ``recall`` this never writes: it does not touch ``last_used`` and it
+    never prunes. Expired rows are excluded, and sensitive rows are excluded
+    unless ``include_sensitive`` is true. Same ordering as ``recall`` (importance,
+    then last use); includes the ``sensitive`` column.
+    """
+    clauses, params = ["(expires_at IS NULL OR expires_at > ?)"], [_now()]
+    if not include_sensitive:
+        clauses.append("sensitive = 0")
+    sql = (
+        f"SELECT * FROM memories WHERE {' AND '.join(clauses)} "
+        f"ORDER BY importance DESC, last_used DESC LIMIT ?"
+    )
+    params.append(limit)
+    with _lock, _connect() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
 def _maybe_prune(max_rows: int = MAX_ROWS_SOFT_CAP) -> None:
     """Importance-aware pruning: drop the lowest importance/oldest rows first,
     never sensitive or importance>=4 rows, once the table grows too large."""
