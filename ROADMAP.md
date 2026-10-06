@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.38 complete** · Active milestone: **none** · Next planned: **v8.39 Tool Runtime Loop — NOT STARTED**
-> Verified suite at checkpoint: **2449 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.39 complete** · Active milestone: **none** · Next planned: **v8.40+ tool calling on the remaining providers — NOT STARTED, owner-gated (OD-4b)**; production-runtime integration (P1–P5) is owner-gated (OD-2, OD-3, OD-4, OD-5)
+> Verified suite at checkpoint: **2607 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -11,8 +11,9 @@ verified test state, the active milestone, the next discovered milestone
 when no milestone is defined, `AUTONOMOUS_BUILD_PROTOCOL.md` §25 discovers,
 audits and records the next justified one here as NOT STARTED before any
 implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
-`AUTONOMOUS_BUILD_PROTOCOL.md`; deferred ideas live in
-`docs/TECHNICAL_DEBT.md`.
+`AUTONOMOUS_BUILD_PROTOCOL.md`; the project-level definition of "EDITH
+complete" lives in `docs/EDITH_COMPLETION_CONTRACT.md`; deferred ideas live
+in `docs/TECHNICAL_DEBT.md`.
 
 ---
 
@@ -46,8 +47,30 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
 | v8.36 system channel and opt-in memory injection | ✅ Complete |
 | v8.37 neutral tool-calling types | ✅ Complete |
 | v8.38 first provider tool-call normalization (Anthropic) | ✅ Complete |
-| v8.39–v8.40 owner-authorized plan (writeback v8.20, retry/resume, context, tool calling) | 🔲 Planned (see below) |
-| Voice / UI integration, provider tool-calling, persistence, streaming, permissions | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`) |
+| v8.39 tool runtime loop (model↔tool execution loop, `core/tool_runtime.py`) | ✅ Complete |
+| v8.40+ tool calling on the remaining providers (OpenAI, Gemini, Ollama) | 🔲 Planned — NOT STARTED, owner-gated (OD-4b; see the Completion Contract) |
+| Production-runtime integration of the v8.x stack (contract requirements P1–P5) | 🔲 Required for completion (Definition P) — NOT STARTED, owner-gated (see the Completion Contract) |
+| Streaming, persistence, full permission system, voice/UI features beyond P1–P5, and the other `docs/TECHNICAL_DEBT.md` ideas | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`; promoted only by a contract amendment) |
+
+---
+
+## Completion Contract
+
+EDITH is complete only as defined in `docs/EDITH_COMPLETION_CONTRACT.md`
+(Definition P — production-complete — ratified by the project owner on
+2026-10-05). That document is authoritative; this section does not restate
+it.
+
+- The v8.x stack is not yet connected to the production runtime
+  (`main.py` constructs an `Agent` but does not use it), so completing
+  v8.39 alone does not complete the project.
+- Requirements, owner decisions and the dated status snapshot live in the
+  contract. This roadmap stays the living milestone / checkpoint record.
+- Contract V4 is partial: `tests/test_frozen_content.py` pins the content of 15
+  of the 16 frozen files; `main.py` stays unpinned until the owner resolves the
+  contract §13 exception.
+- When the contract is satisfied, this file records "Contract v1 satisfied
+  at commit `<hash>`" with the owner's sign-off.
 
 ---
 
@@ -548,6 +571,56 @@ implementation. Governance lives in `CLAUDE.md`, `MARK-L.md` and
   real imports, since `supports_tool_calling` is not an import); AI boundary
   field pins (additive fields); Claude's import pin (+`core.tool_calling`).
   Verified: 62 new focused, full suite 2449.
+- v8.39 Tool Runtime Loop — the model↔tool execution loop, implemented under
+  the owner decisions locked in `docs/EDITH_COMPLETION_CONTRACT.md` §8.1 (O1,
+  O2, O9, OD-A, OD-B, OD-C and the C8 audit confirmations). New stdlib-only /
+  provider-neutral leaves **`core/tool_runtime.py`** (`run_tool_loop`,
+  `ToolLoopResult`, `ToolCallOutcome`, `ToolLoopExhaustedError`,
+  `MAX_MODEL_ROUNDS = 5`, `MAX_TOOL_EXECUTIONS = 10`) and
+  **`core/tool_context.py`** (`render_tool_context`, deterministic canonical
+  JSON of the offered declarations and the run's exchanges). **Loop:** every
+  round is one provider call; a response with no tool call ends the run; a
+  call is refused unless its tool is offered for the run (`not_offered`) and
+  registered (`not_registered`); a tool whose `side_effects` is not exactly
+  `False` also needs the injected `confirm` hook to return exactly `True`
+  (`confirmation_denied`; no hook: refused); otherwise the router is invoked
+  once (no retry — the v8.33 per-step bound is untouched). A refusal or a tool
+  failure (including a non-`str` output) reaches the model as the sanitized
+  string `error: refused (<reason>)` / `error: failed (<ExceptionTypeName>)`
+  in `ToolCallResult.output` and the loop continues; messages, arguments and
+  tracebacks are never sent or recorded. **Limits (OD-C):** 5 model rounds and
+  10 tool executions per run; a refused call is not an execution, a failing
+  call is; if the 5th response still proposes calls they are not run; the 11th
+  execution is refused before the hook is asked and before invoking; either
+  limit raises `ToolLoopExhaustedError` carrying `limit`, `rounds`,
+  `tool_executions` and the audit `outcomes`. **Audit (O9):** the run returns
+  one `ToolCallOutcome(call_id, tool_name, outcome, exception_type)` per call
+  and writes nothing. **Carrier (OD-B):** `ToolExchange(calls, results, text)`
+  in `core/tool_calling.py` and the additive final field
+  `AIRequest.tool_exchanges` (non-empty requires `tools`); exchanges stay
+  loop-local and canonical history is unchanged. **Accounting (OD-A):**
+  `ContextManager.prepare_context(..., tool_context=)` counts the rendering as
+  required, never-truncated context inside the existing 8,192-token budget
+  (history is trimmed to make room, overflow raises
+  `ContextValidationError`); `AIService` forwards the exchanges on every path
+  and uses the context path whenever tools are offered (a tools-only request
+  is still forwarded unchanged). **Claude (provider boundary):**
+  exchanges are replayed as native assistant `tool_use` / user `tool_result`
+  blocks (no error flag), and a response that holds a `tool_use` block with
+  `stop_reason` `max_tokens` or `refusal` raises `ToolCallNormalizationError`
+  (R-2). **Agent:** one thin `Agent.ask_with_tools(provider_name, prompt, *,
+  tools=None, confirm=None, memory=None)` mirroring `ask` (history is appended
+  only on success; `tools` defaults to the catalog's `model_invocable` specs);
+  `Agent.__all__` unchanged. Known limitation (R-1, environment-only, V6): the
+  exchange carries no provider-opaque blocks, so a model whose reasoning
+  blocks must be replayed may degrade a follow-up request. Sanctioned pin
+  updates (minimum): `ToolCall` importers (+`tool_runtime`); `tool_calling`
+  `__all__` (+`ToolExchange`); `AIRequest` field lists (+`tool_exchanges`);
+  `AIService` import allowlist (+`core.tool_context`); `tool_interface`
+  consumer allowlist (+`tool_runtime`); Agent import allowlists
+  (+`core.tool_runtime`). Frozen legacy modules, `main.py`, the router,
+  registry, catalog, other providers and `Agent.__all__` zero diff. Verified:
+  138 new focused, full suite 2587.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -556,14 +629,18 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.38 — First Provider Tool-Call Normalization: COMPLETE.**
+**v8.39 — Tool Runtime Loop: COMPLETE.**
 
-- Full suite: 2449 passed, 0 failed, 0 errors, 0 skipped.
-- Production changes only in `core/ai_provider.py`, `core/claude_provider.py`
-  and `core/ai_service.py`; frozen legacy modules zero diff.
-- Claude can now be offered `ToolSpec` declarations and returns normalized
-  `ToolCall`s; other providers reject tools fail-closed. Nothing executes a
-  tool yet — the runtime loop is v8.39 (NOT STARTED).
+- Full suite: 2607 passed, 0 failed, 0 errors, 0 skipped (2587 at v8.39 plus the
+  20 V4 content pins in `tests/test_frozen_content.py`).
+- Production changes in `core/tool_calling.py`, `core/ai_provider.py`,
+  `core/claude_provider.py`, `core/ai_service.py`, `core/context_manager.py`,
+  `core/agent/__init__.py` and the new `core/tool_runtime.py` /
+  `core/tool_context.py`; frozen legacy modules and `main.py` zero diff.
+- `Agent.ask_with_tools` can run a bounded model↔tool loop (5 model rounds /
+  10 tool executions) on a tool-calling provider (Claude). The v8.x stack is
+  still not connected to the production runtime (`main.py`), and OpenAI,
+  Gemini and Ollama still reject tools fail-closed.
 
 ---
 
@@ -956,13 +1033,31 @@ providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
 
-### v8.39 — Tool Runtime Loop — **NOT STARTED**
+### v8.39 — Tool Runtime Loop — **COMPLETE** (moved to history above; kept here as the discovery record)
 
-Per the owner-authorized plan above. Contract audit required before
-implementation; open inputs: side-effecting tool confirmation (O1), tool-error
-disclosure / representation (O2), loop limits (O5), tool-call auditing (O9),
-tool-declaration token accounting, and how tool exchanges are represented in
-follow-up requests.
+Per the owner-authorized plan above. The C8 contract audit was performed and
+its confirmations were owner-approved on 2026-10-06 (contract §8.1) before
+implementation.
+
+All six gating owner decisions are **locked 2026-10-06** (full text in
+`docs/EDITH_COMPLETION_CONTRACT.md` §8.1): O1 — side-effecting tool calls are
+refused unless an injected confirmation hook approves (no hook: refused);
+OD-B — a new additive `AIRequest` field carries the loop-local tool exchange,
+canonical history unchanged; O2 — refusals and failures reach the model as a
+fixed, sanitized string in `ToolCallResult.output` (no new field); OD-A —
+tool declarations and the exchange are counted as required context inside the
+existing 8,192-token budget; O9 — the loop returns per-call outcome records
+and writes nothing; OD-C — the v8.39 model↔tool execution loop is limited to
+**5 model rounds** and **10 total tool executions** per tool-calling run, and
+exhausting either limit produces the dedicated loop-exhaustion error defined
+for v8.39. These limits apply to the v8.39 loop only; they are not the v8.33
+per-step retry bound, which is unchanged.
+
+No owner decision remained open for v8.39. The details left to the contract
+audit (carrier field shape, sanitized-string vocabulary, token rendering rule,
+outcome record shape, loop-exhaustion error shape and the exact counting
+rules for the two limits) were confirmed by the owner and are recorded in §8.1
+of the contract.
 
 ### v8.38 — First Provider Tool-Call Normalization — **COMPLETE** (moved to history above; kept here as the discovery record)
 

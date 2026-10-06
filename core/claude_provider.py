@@ -18,6 +18,15 @@ non-empty, as plain ``dict`` / ``list`` copies, never ``idempotent`` /
 malformed ``tool_use`` block raises ``ToolCallNormalizationError`` — never
 repaired, invented or dropped. No SDK object leaves this module. Nothing is
 executed.
+
+v8.39: ``AIRequest.tool_exchanges`` (the completed rounds of a tool-calling run)
+are replayed after the user turn as native blocks — per round one assistant
+message (the round's text, when any, then one ``tool_use`` block per call) and
+one user message holding every ``tool_result`` block, in call order. No error
+flag is sent: refusals and failures arrive as the sanitized text of the result.
+A response that contains a ``tool_use`` block but stopped with ``stop_reason``
+``max_tokens`` or ``refusal`` may carry a cut-off call, so it raises
+``ToolCallNormalizationError`` and nothing is returned for execution (R-2).
 """
 
 from __future__ import annotations
@@ -118,6 +127,23 @@ class ClaudeProvider:
             for m in request.history.messages():
                 messages.append(m.to_anthropic_payload())
         messages.append({"role": "user", "content": request.prompt})
+        for exchange in request.tool_exchanges:  # v8.39: replay completed rounds natively
+            assistant_blocks: list[dict] = []
+            if exchange.text:
+                assistant_blocks.append({"type": "text", "text": exchange.text})
+            for call in exchange.calls:
+                assistant_blocks.append(
+                    {"type": "tool_use", "id": call.call_id, "name": call.name,
+                     "input": _plain(call.arguments)}
+                )
+            messages.append({"role": "assistant", "content": assistant_blocks})
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": result.call_id, "content": result.output}
+                    for result in exchange.results
+                ],
+            })
         kwargs: dict = {"model": self.model, "max_tokens": 1024, "messages": messages}
         if request.system is not None:  # v8.36: Anthropic ``system=``
             kwargs["system"] = request.system
@@ -138,9 +164,15 @@ class ClaudeProvider:
             if isinstance(block_text, str) and block_text:
                 text = block_text
                 break
-        return AIResponse(
-            text=text, provider_name=self.name, tool_calls=_normalize_tool_calls(blocks)
-        )
+        tool_calls = _normalize_tool_calls(blocks)
+        stop_reason = getattr(sdk_response, "stop_reason", None)
+        if tool_calls and stop_reason in ("max_tokens", "refusal"):
+            # R-2: a tool call cut off by the output limit or a refusal is never
+            # returned for execution.
+            raise ToolCallNormalizationError(
+                f"tool_use response stopped with stop_reason {stop_reason!r}"
+            )
+        return AIResponse(text=text, provider_name=self.name, tool_calls=tool_calls)
 
 
 __all__ = ["ClaudeProvider"]

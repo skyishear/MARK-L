@@ -468,6 +468,7 @@ class TestArchitecture:
             "core.tool_catalog",
             "core.memory_context",
             "core.tool_registry", "core.tool_router",
+            "core.tool_runtime",  # v8.39
         }
 
     def test_all_unchanged(self) -> None:

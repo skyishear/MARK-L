@@ -11,6 +11,24 @@
 > placeholders, and no architectural changes are introduced by this document. The
 > production codebase remains untouched.
 
+> **Status note (recorded 2026-10-05, checkpoint v8.38).** This document was
+> written at the v7.6 checkpoint, and its sections describe deferred ideas as of
+> then. Since then, owner-authorized milestones have implemented §5 (token
+> budgeting, v8.35) and §6 (history trimming, v8.34) and parts of §2, §4 and §9:
+> the context policy, the system channel and opt-in memory injection (v8.36), and
+> neutral tool-calling types with first-provider normalization (v8.37–v8.38),
+> and the bounded model↔tool runtime loop (v8.39).
+> Bounded retry exists for tool execution (v8.33); the `AIService`-level retry of
+> §14 does not. `ROADMAP.md` is the authoritative record of what is complete.
+> The "Project assessment" section at the end is a historical v7.6 snapshot: its
+> test count (652/652) and its "recommended next milestone" (v8.0) are
+> superseded (see `ROADMAP.md` for the current verified suite). Version
+> targets here ("v8.x", "v9.x") are soft and predate the roadmap's numbering;
+> `ROADMAP.md` numbering is authoritative, and the v8/v9 numbering question
+> remains an open owner decision (OD-9). What is required for completion is
+> defined only by `docs/EDITH_COMPLETION_CONTRACT.md`; nothing in this document
+> is a completion requirement unless the contract promotes it.
+
 ---
 
 ## How to read this document

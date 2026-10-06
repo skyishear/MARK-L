@@ -333,7 +333,8 @@ class TestImportArchitecture:
         v8_30_modules = {"core.failure_taxonomy"}  # execution failure taxonomy
         v8_32_modules = {"core.tool_catalog"}  # tool catalog consulted by resume (O4)
         v8_36_modules = {"core.memory_context"}  # opt-in memory injection request type
-        assert core_imports == allowed_legacy | V8_MODULES | v8_15_modules | v8_16_modules | v8_17_modules | v8_21_modules | v8_22_modules | v8_25_modules | v8_26_modules | v8_28_modules | v8_30_modules | v8_32_modules | v8_36_modules
+        v8_39_modules = {"core.tool_runtime"}  # tool runtime loop (ask_with_tools)
+        assert core_imports == allowed_legacy | V8_MODULES | v8_15_modules | v8_16_modules | v8_17_modules | v8_21_modules | v8_22_modules | v8_25_modules | v8_26_modules | v8_28_modules | v8_30_modules | v8_32_modules | v8_36_modules | v8_39_modules
 
     def test_foundation_planning_engine_is_aliased(self) -> None:
         aliases = {

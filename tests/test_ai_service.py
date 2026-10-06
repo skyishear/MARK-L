@@ -94,6 +94,7 @@ class TestArchitecturalIsolation:
             "core.ai_conversation_engine",
             "core.conversation_history",
             "core.context_manager",
+            "core.tool_context",  # v8.39: deterministic tool-context rendering (OD-A)
             "__future__",
         }
         forbidden_substrings = (

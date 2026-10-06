@@ -18,7 +18,9 @@ Read in this order, each exactly once per task:
    (verification gates, STOP conditions, failure recovery, checkpoint reports, continuation).
 4. `ROADMAP.md` — living checkpoint: milestone history, current checkpoint,
    active and next discovered milestone, deferred areas.
-5. `docs/*.md` — engineering standards and deferred-work notes (`docs/TECHNICAL_DEBT.md`).
+5. `docs/*.md` — `docs/EDITH_COMPLETION_CONTRACT.md` (authoritative
+   project-level definition of "EDITH complete"), engineering standards and
+   deferred-work notes (`docs/TECHNICAL_DEBT.md`).
 
 `readme.md` is separate public project documentation.
 When documents overlap, the more specific document is authoritative for its role.
@@ -31,10 +33,15 @@ Never rely on previous conversations. Verify the current state before acting.
 ## Current Repository State
 
 - Legacy v3.x execution stack: **frozen** (read-only; see `ROADMAP.md`).
-- Active surface: v8.x Foundation stores, v8.11–v8.20 tool stack, v8.21–v8.33 projection path.
-- Checkpoint: **v8.38 complete**; active milestone: none; next planned milestone:
-  **v8.39** of the owner-authorized plan recorded in `ROADMAP.md` (the living checkpoint).
-- Verified suite: **2449 passed, 0 failed, 0 errors, 0 skipped**.
+- Active surface: v8.x Foundation stores, v8.11–v8.20 tool stack, v8.21–v8.33 projection path,
+  v8.34–v8.36 context and memory shaping, v8.37–v8.38 tool-calling types and first provider,
+  v8.39 tool runtime loop.
+- Checkpoint: **v8.39 complete**; active milestone: none; next planned milestone:
+  **v8.40+** (tool calling on the remaining providers, owner-gated) of the owner-authorized
+  plan recorded in `ROADMAP.md` (the living checkpoint).
+- Verified suite: **2607 passed, 0 failed, 0 errors, 0 skipped**.
+- Completion: EDITH is complete only per `docs/EDITH_COMPLETION_CONTRACT.md`
+  (Definition P, production-complete). Completing v8.39 alone is not project completion.
 
 Details and history live in `ROADMAP.md` — do not duplicate them here.
 

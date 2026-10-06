@@ -7,6 +7,10 @@ Provider-neutral value types for model tool calling:
 * ``ToolCallResult(call_id, name, output)`` — the model-facing result of
   one ``ToolCall``, correlated by ``call_id`` (and ``name``, which some
   providers key results by);
+* ``ToolExchange(calls, results, text)`` — one completed round of a model
+  tool-calling run (v8.39): the calls the model proposed, the matching
+  model-facing results in the same order, and the first text block of the
+  round's response (``""`` when none);
 * ``validate_tool_calls(calls)`` — checks an ordered sequence of calls.
 
 These are **types only**. They are distinct from the execution-side
@@ -37,7 +41,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
-__all__ = ["ToolCall", "ToolCallResult", "validate_tool_calls"]
+__all__ = ["ToolCall", "ToolCallResult", "ToolExchange", "validate_tool_calls"]
 
 
 def _require_text(name: str, value: object) -> None:
@@ -90,6 +94,41 @@ class ToolCallResult:
         _require_text("name", self.name)
         if not isinstance(self.output, str):
             raise TypeError("output must be a str")
+
+
+@dataclass(frozen=True, slots=True)
+class ToolExchange:
+    """One completed round of a tool-calling run (provider-neutral, immutable).
+
+    ``calls`` is non-empty and uniquely identified; ``results`` holds exactly
+    one ``ToolCallResult`` per call, in the same order, with the same
+    ``call_id`` and ``name``. ``text`` is the first text block of the
+    response that proposed the calls.
+    """
+
+    calls: tuple[ToolCall, ...]
+    results: tuple[ToolCallResult, ...]
+    text: str = ""
+
+    def __post_init__(self) -> None:
+        calls = validate_tool_calls(self.calls if isinstance(self.calls, tuple) else tuple(self.calls))
+        if not calls:
+            raise ValueError("calls must not be empty")
+        if isinstance(self.results, (str, bytes)) or not isinstance(self.results, Sequence):
+            raise TypeError("results must be a sequence of ToolCallResult")
+        results = tuple(self.results)
+        for index, result in enumerate(results):
+            if not isinstance(result, ToolCallResult):
+                raise TypeError(f"results[{index}] is not a ToolCallResult: {type(result).__name__}")
+        if len(results) != len(calls):
+            raise ValueError("results must contain exactly one result per call")
+        for call, result in zip(calls, results):
+            if (result.call_id, result.name) != (call.call_id, call.name):
+                raise ValueError(f"result does not match call {call.call_id!r}")
+        if not isinstance(self.text, str):
+            raise TypeError("text must be a str")
+        object.__setattr__(self, "calls", calls)
+        object.__setattr__(self, "results", results)
 
 
 def validate_tool_calls(calls: Sequence[ToolCall]) -> tuple[ToolCall, ...]:

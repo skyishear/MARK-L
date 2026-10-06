@@ -17,6 +17,7 @@ from core.ai_provider_router import AIProviderRouter, AIProviderUnavailableError
 from core.context_manager import ContextManager
 from core.conversation_history import ConversationHistory
 from core.default_ai_provider_registry import build_default_registry
+from core.tool_context import render_tool_context
 
 
 class AIService:
@@ -104,6 +105,12 @@ class AIService:
         capability ``supports_tool_calling = True``, this raises
         ``ToolCallingUnsupportedError`` before anything else happens and the
         provider is never invoked (fail-closed; no provider-specific checks).
+
+        v8.39: ``request.tool_exchanges`` is forwarded unchanged as well. When
+        tools are offered, their declarations and the exchanges are rendered
+        (``core.tool_context``) and counted by the ``ContextManager`` as
+        required context, so the SYSTEM -> MEMORY -> HISTORY -> PROMPT path is
+        used whenever tools are offered.
         """
         if request.tools:
             provider = self._router.select(provider_name)
@@ -112,24 +119,32 @@ class AIService:
                     f"provider {provider_name!r} does not support tool calling"
                 )
         system = request.system if request.system is not None else self._system
-        if system is None and memory is None:
+        if system is None and memory is None and not request.tools:
             merged = request
             prepared = self._context_manager.prepare_request(history, request.prompt)
             if history is not None:
                 effective = ConversationHistory()
                 effective.extend(prepared)
-                merged = AIRequest(prompt=request.prompt, history=effective, tools=request.tools)
+                merged = AIRequest(
+                    prompt=request.prompt, history=effective, tools=request.tools,
+                    tool_exchanges=request.tool_exchanges,
+                )
             return self._engine.complete(provider_name, merged)
+        tool_context = render_tool_context(request.tools, request.tool_exchanges) if request.tools else None
         context = self._context_manager.prepare_context(
-            history, request.prompt, system=system, memory=memory
+            history, request.prompt, system=system, memory=memory, tool_context=tool_context
         )
+        if history is None and request.system is None and context.system is None:
+            # Nothing was added to the request (tools-only budget check): the
+            # request is forwarded unchanged, as in v8.38.
+            return self._engine.complete(provider_name, request)
         effective_history = None
         if history is not None:
             effective_history = ConversationHistory()
             effective_history.extend(context.messages)
         merged = AIRequest(
             prompt=request.prompt, history=effective_history, system=context.system,
-            tools=request.tools,
+            tools=request.tools, tool_exchanges=request.tool_exchanges,
         )
         return self._engine.complete(provider_name, merged)
 

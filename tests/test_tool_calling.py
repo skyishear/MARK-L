@@ -220,7 +220,7 @@ class TestValidateToolCalls:
 
 class TestBoundary:
     def test_exact_public_surface(self) -> None:
-        assert tc_module.__all__ == ["ToolCall", "ToolCallResult", "validate_tool_calls"]
+        assert tc_module.__all__ == ["ToolCall", "ToolCallResult", "ToolExchange", "validate_tool_calls"]  # v8.39: + ToolExchange
 
     def test_stdlib_only(self) -> None:
         tree = ast.parse(open(MODULE_PATH, encoding="utf-8").read())
@@ -244,7 +244,7 @@ class TestBoundary:
         # normalizing provider are the sanctioned importers.
         # Checked on real imports (``supports_tool_calling`` is an unrelated
         # v8.38 capability attribute name, not an import).
-        allowed = {"tool_calling.py", "ai_provider.py", "claude_provider.py"}
+        allowed = {"tool_calling.py", "ai_provider.py", "claude_provider.py", "tool_runtime.py"}  # v8.39: + the loop leaf
         for dirpath, _, files in os.walk(CORE_DIR):
             for name in files:
                 if name.endswith(".py") and name not in allowed:
@@ -263,8 +263,9 @@ class TestBoundary:
         assert [f.name for f in dataclasses.fields(ToolResult)] == ["tool_name", "output"]
 
     def test_ai_boundary_unchanged(self) -> None:
-        # v8.38: additive final fields only (existing fields and order intact).
-        assert [f.name for f in dataclasses.fields(AIRequest)] == ["prompt", "history", "system", "tools"]
+        # v8.38 / v8.39: additive final fields only (existing fields and order intact).
+        assert [f.name for f in dataclasses.fields(AIRequest)] == [
+            "prompt", "history", "system", "tools", "tool_exchanges"]
         assert [f.name for f in dataclasses.fields(AIResponse)] == ["text", "provider_name", "tool_calls"]
 
     def test_v8_36_provider_payload_unchanged(self) -> None:

@@ -47,7 +47,7 @@ AUTONOMOUS_BUILD_PROTOCOL.md   autonomous execution protocol
     ↓
 ROADMAP.md                     living milestone/checkpoint state
     ↓
-docs/*.md                      engineering standards / deferred work
+docs/*.md                      completion contract / engineering standards / deferred work
 ```
 
 `readme.md` is separate public project documentation.
@@ -64,6 +64,11 @@ Roles:
   checkpoint and verified test state, active milestone, next discovered
   milestone with its justification, deferred areas. It is a history and
   checkpoint, never a ceiling on development. This document does not
+  restate it.
+- **docs/EDITH_COMPLETION_CONTRACT.md** — the authoritative
+  project-level definition of when EDITH is complete (required
+  capabilities, production-integration requirements, verification
+  requirements, deferred areas, owner decisions). This document does not
   restate it.
 - **docs/TECHNICAL_DEBT.md** — deferred ideas explicitly not to be
   implemented before their milestone.
@@ -194,6 +199,10 @@ A milestone is complete only when:
 - focused tests, the full suite and architecture checks all pass;
 - no unrelated files were modified and scope was not expanded;
 - the checkpoint report reflects real test output.
+
+This is the definition of done for a **milestone**. It is not the
+definition of a finished project: EDITH is complete only as defined in
+`docs/EDITH_COMPLETION_CONTRACT.md`.
 
 ---
 

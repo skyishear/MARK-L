@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from core.agent.context_manager import ContextManager
 from core.agent.history_manager import HistoryManager
@@ -58,6 +58,7 @@ from core.tool_interface import ToolRequest, ToolResult, TransientToolError
 from core.tool_registry import ToolRegistry
 from core.tool_catalog import ToolCatalog
 from core.tool_router import ToolNotFoundError, ToolRouter
+from core.tool_runtime import ToolLoopResult, run_tool_loop
 
 __all__ = [
     "Agent",
@@ -1683,3 +1684,45 @@ class Agent:
         self._conversation_history.append_user(prompt)
         self._conversation_history.append_assistant(response.text)
         return response
+
+    def ask_with_tools(
+        self,
+        provider_name: str,
+        prompt: str,
+        *,
+        tools: Sequence[Any] | None = None,
+        confirm: Callable[[Any, Any], bool] | None = None,
+        memory: MemoryRequest | None = None,
+    ) -> ToolLoopResult:
+        """One synchronous tool-calling run (v8.39); thin wiring over
+        ``core.tool_runtime.run_tool_loop``.
+
+        Like :meth:`ask`, the Agent's conversation history is sent as prior
+        context and, only on success, the user prompt and the final reply are
+        appended to it; the tool exchanges stay loop-local and nothing is
+        appended when the run raises. ``tools`` defaults to the
+        ``model_invocable`` specs of :attr:`tool_catalog` (an empty selection
+        raises ``ValueError``); ``confirm`` approves side-effecting calls (no
+        hook: they are refused); ``memory`` is the v8.36 opt-in. The loop
+        limits, refusal rules and audit records are owned by the runtime leaf.
+        """
+        offered = (
+            tuple(tools) if tools is not None
+            else tuple(spec for spec in self.tool_catalog.list() if spec.model_invocable)
+        )
+        prior_history = ConversationHistory()
+        prior_history.extend(self._conversation_history)
+        extra = {"memory": memory} if memory is not None else {}
+        result = run_tool_loop(
+            lambda request: self._ai_service.complete(
+                provider_name, request, history=prior_history, **extra
+            ),
+            prompt=prompt,
+            tools=offered,
+            router=self.tool_router,
+            registry=self.tool_registry,
+            confirm=confirm,
+        )
+        self._conversation_history.append_user(prompt)
+        self._conversation_history.append_assistant(result.response.text)
+        return result

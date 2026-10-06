@@ -164,6 +164,7 @@ class ContextManager:
         *,
         system: Optional[str] = None,
         memory: Optional[MemoryRequest] = None,
+        tool_context: Optional[str] = None,
     ) -> PreparedContext:
         """v8.36: the full request-level context — SYSTEM, MEMORY, HISTORY,
         PROMPT — within the 8,192-token input budget.
@@ -177,12 +178,18 @@ class ContextManager:
         never causes history trimming. Message and character limits apply to
         the history only. Canonical history is never mutated.
 
+        v8.39: ``tool_context`` (the deterministic rendering of the offered
+        tool declarations and the run's tool exchanges) is required context
+        like the system instructions and the prompt: it is counted through
+        the injected counter inside the same 8,192-token budget, never
+        truncated, and the history is trimmed to make room for it.
+
         Raises:
             TypeError: ``prompt`` / ``system`` are not ``str`` (``system``
                 may be ``None``), or ``memory`` is not a ``MemoryRequest``.
-            ContextValidationError: system + prompt alone exceed
-                ``max_tokens``, or the newest history unit plus them cannot
-                fit.
+            ContextValidationError: system + prompt (+ tool context) alone
+                exceed ``max_tokens``, or the newest history unit plus them
+                cannot fit.
         """
         if not isinstance(prompt, str):
             raise TypeError("prompt must be a str")
@@ -190,16 +197,20 @@ class ContextManager:
             raise TypeError("system must be a str or None")
         if memory is not None and not isinstance(memory, MemoryRequest):
             raise TypeError("memory must be a MemoryRequest or None")
+        if tool_context is not None and not isinstance(tool_context, str):
+            raise TypeError("tool_context must be a str or None")
         prompt_tokens = self._count(prompt)
         system_tokens = self._count(system) if system is not None else 0
-        required = prompt_tokens + system_tokens
+        tool_tokens = self._count(tool_context) if tool_context else 0
+        required = prompt_tokens + system_tokens + tool_tokens
         if required > self._max_tokens:
+            tools_part = f" + tool context ({tool_tokens} tokens)" if tool_tokens else ""
             raise ContextValidationError(
-                f"system ({system_tokens} tokens) + prompt ({prompt_tokens} tokens) "
+                f"system ({system_tokens} tokens) + prompt ({prompt_tokens} tokens){tools_part} "
                 f"exceeds max_tokens={self._max_tokens}"
             )
         messages = self._bound(tuple(self.prepare(history)), prompt_tokens=required)
-        fixed = prompt_tokens + sum(self._count(m.content) for m in messages)
+        fixed = prompt_tokens + tool_tokens + sum(self._count(m.content) for m in messages)
         entries = select_memories(memory, prompt) if memory is not None else ()
         for kept in range(len(entries), 0, -1):
             block = render_memories(entries[:kept])

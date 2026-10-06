@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Protocol
 
 from core.conversation_history import ConversationHistory, Message
-from core.tool_calling import ToolCall, validate_tool_calls
+from core.tool_calling import ToolCall, ToolExchange, validate_tool_calls
 from core.tool_catalog import ToolSpec
 
 
@@ -62,6 +62,10 @@ class AIRequest:
     # ``ToolSpec``s with ``model_invocable=True`` and unique names; order
     # preserved. Declarations only — not authorization (v8.39).
     tools: tuple[ToolSpec, ...] = ()
+    # v8.39: the completed tool-calling rounds of one run (calls proposed by the
+    # model and their results), carried loop-locally into the follow-up request.
+    # A non-empty value requires ``tools``. Never part of canonical history.
+    tool_exchanges: tuple[ToolExchange, ...] = ()
 
     def __post_init__(self) -> None:
         tools = self.tools
@@ -78,6 +82,16 @@ class AIRequest:
                 raise ValueError(f"duplicate tool name: {spec.name!r}")
             names.add(spec.name)
         object.__setattr__(self, "tools", normalized)
+        exchanges = self.tool_exchanges
+        if isinstance(exchanges, (str, bytes)) or not isinstance(exchanges, Iterable):
+            raise TypeError("tool_exchanges must be a collection of ToolExchange")
+        rounds = tuple(exchanges)
+        for index, exchange in enumerate(rounds):
+            if not isinstance(exchange, ToolExchange):
+                raise TypeError(f"tool_exchanges[{index}] is not a ToolExchange: {type(exchange).__name__}")
+        if rounds and not normalized:
+            raise ValueError("tool_exchanges requires tools")
+        object.__setattr__(self, "tool_exchanges", rounds)
 
 
 @dataclass(frozen=True, slots=True)

@@ -86,7 +86,8 @@ class TestAIRequestTools:
         assert AIRequest(prompt="p").tools == ()
 
     def test_fields_additive_and_positional_compatible(self) -> None:
-        assert [f.name for f in dataclasses.fields(AIRequest)] == ["prompt", "history", "system", "tools"]
+        assert [f.name for f in dataclasses.fields(AIRequest)] == [
+            "prompt", "history", "system", "tools", "tool_exchanges"]  # v8.39: additive final field
         r = AIRequest("p", None, "S")
         assert (r.prompt, r.history, r.system, r.tools) == ("p", None, "S", ())
 

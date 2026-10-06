@@ -9,9 +9,9 @@ controlled tool system, and written back into memory and reflection with
 deterministic, fully tested behavior. Every capability is added as a
 small, additive, independently testable module.
 
-**Status:** checkpoint **v8.38 complete** · next planned milestone
-**v8.39 Tool Runtime Loop** · verified suite **2449 passed, 0 failed,
-0 errors, 0 skipped**. `ROADMAP.md` is the authoritative, living record.
+**Status:** checkpoint **v8.39 complete** · next planned milestone
+**v8.40+ tool calling on the remaining providers (owner-gated)** · verified
+suite **2607 passed, 0 failed, 0 errors, 0 skipped**. `ROADMAP.md` is the authoritative, living record.
 
 ---
 
@@ -69,6 +69,9 @@ small, additive, independently testable module.
   (`core/skill_tool_adapter.py`).
 - A tool catalog with metadata and schema validation (v8.31).
 - The Agent exposes opt-in tool routing, dispatch and writeback paths.
+- A bounded model↔tool loop (`core/tool_runtime.py`, `Agent.ask_with_tools`, v8.39):
+  5 model rounds / 10 tool executions per run, side-effecting calls need an
+  injected confirmation hook, failures reach the model only as sanitized text.
 
 ### Legacy stack
 The original v3.x execution stack (planner, execution orchestrator /
@@ -122,12 +125,15 @@ MARK-L/
 
 ```bash
 pip install -r requirements.txt
-py -m pytest            # run the full suite
+python -m pytest        # run the full suite
 ```
 
 The v8.x architecture is developed and verified through the test suite.
-Voice and UI integration of the v8.x stack is deferred (see
-`ROADMAP.md` and `docs/TECHNICAL_DEBT.md`).
+Connecting it to the production runtime is a required completion
+requirement of the EDITH Completion Contract
+(`docs/EDITH_COMPLETION_CONTRACT.md`) and has not started; voice and UI
+features beyond that integration remain deferred (see `ROADMAP.md` and
+`docs/TECHNICAL_DEBT.md`).
 
 ---
 
