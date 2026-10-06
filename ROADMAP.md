@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.43 complete** · Active milestone: **none** · Next planned: **v8.44 Production Runtime Wiring — NOT STARTED** (production-runtime integration plan v8.41–v8.45, owner-authorized 2026-10-06)
-> Verified suite at checkpoint: **2780 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.44 complete** · Active milestone: **none** · Next planned: **v8.45 Contract Closure — NOT STARTED** (production-runtime integration plan v8.41–v8.45, owner-authorized 2026-10-06)
+> Verified suite at checkpoint: **2792 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -52,8 +52,8 @@ in `docs/TECHNICAL_DEBT.md`.
 | v8.41 production tool bridge (P2, P3: Gemini Live adapter, tool registration; `core/live_tools.py`) | ✅ Complete |
 | v8.42 production memory bridge (P4; `core/production_memory.py`) | ✅ Complete |
 | v8.43 production run recording (P5; `core/live_run_record.py`) | ✅ Complete |
-| v8.44 production runtime wiring (P1, V5) | 🔲 Planned — NOT STARTED |
-| v8.44 production runtime wiring (P1, V5; scoped unfreeze of `main.py`) | 🔲 Planned — NOT STARTED |
+| v8.44 production runtime wiring (P1, V5; scoped unfreeze of `main.py`) | ✅ Complete |
+| v8.45 contract closure (V4, V7, V9, records) | 🔲 Planned — NOT STARTED |
 | v8.45 contract closure (V7 dependencies, V9 notices, V4 `main.py` pin, A3 / A5 records) | 🔲 Planned — NOT STARTED |
 | Streaming, persistence, full permission system, voice/UI features beyond P1–P5, and the other `docs/TECHNICAL_DEBT.md` ideas | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`; promoted only by a contract amendment) |
 
@@ -737,6 +737,26 @@ it.
   allowlists (+`core.live_run_record`). Verified: 14 new focused, full suite 2780.
   Not yet called from `main.py` (v8.44).
 
+- v8.44 Production Runtime Wiring (contract P1, V5; owner decision OD-2, scoped
+  unfreeze of `main.py`, recorded in contract §13) — the only production change
+  is wiring in `main.py`; all logic stays in the `core/` modules of v8.41–v8.43.
+  `JarvisLive.__init__` builds `self._agent.live_tool_session(execute=...,
+  confirm=approve_requested_call, recorder=self._agent.record_live_tool_outcomes)`
+  and imports the read-only, non-sensitive production memory into the Agent
+  (failure only prints; the app still starts). The old `_execute_tool` is renamed
+  `_execute_tool_legacy` and is reached only through the thin `_run_legacy_tool`
+  executor, so the identity / PIN gate (`_is_high_risk`) and every tool branch are
+  untouched. `_build_config` returns the declarations through
+  `sync_declarations(...)` (same list, now registered in the Agent). The receive
+  loop sends each `tool_call` batch through `handle_round` (one model round, OD-C
+  limits, O1/O2/O9, run recording) and calls `end_run()` at the server
+  `turn_complete`. `tests/test_production_wiring.py` (12, headless): AST pins that
+  `main.py` uses the Agent for tools, recording and memory, and the same wiring
+  exercised end to end with fakes, the real 28 declarations and a real SQLite
+  file. No library pin needed an update. Verified: 12 new focused, full suite
+  2792. **Not verified here:** a real Live session (V6, owner attestation); the
+  `turn_complete` run boundary is an assumption until then.
+
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
 
@@ -744,16 +764,14 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.43 — Production Run Recording: COMPLETE.**
+**v8.44 — Production Runtime Wiring: COMPLETE.**
 
-- Full suite: 2780 passed, 0 failed, 0 errors, 0 skipped.
-- Production changes: new `core/live_run_record.py` and the thin
-  `Agent.record_live_tool_outcomes`; frozen legacy modules and `main.py` zero
-  diff.
-- Production tool calls routed through `live_tool_session(recorder=...)` produce a
-  `PipelineRun`, step/Goal/Plan reflection and success or failure writeback.
-  `main.py` is not wired yet (v8.44), so the production runtime still does not use
-  the v8.x stack.
+- Full suite: 2792 passed, 0 failed, 0 errors, 0 skipped.
+- Production changes: scoped `main.py` wiring only (frozen legacy modules zero
+  diff); new `tests/test_production_wiring.py`.
+- The production runtime now runs Live tool calls through the v8.x tool stack
+  with run recording and the memory bridge. Real-desktop verification is V6
+  (owner attestation, not performed).
 
 ---
 
@@ -1185,7 +1203,7 @@ import checks, `git diff` scope check._
   failure writeback — from the O9 outcome record only (no arguments, outputs or
   exception text). *Prerequisites:* v8.21–v8.29 machinery, v8.39 records.
   *Exclusions:* writes to the production SQLite store (OD-5).
-- **v8.44 Production Runtime Wiring (P1, V5).** *Objective:* the scoped unfreeze
+- **v8.44 Production Runtime Wiring (P1, V5) — COMPLETE (see history above).** *Objective:* the scoped unfreeze
   of `main.py` (OD-2): the production entry point obtains the Agent's live tool
   session, routes the Live `tool_call` batches and `turn_complete` through it,
   and imports the memory bridge, with all logic in the new `core/` modules;

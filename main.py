@@ -42,6 +42,7 @@ from memory.core_memory import (
     why as core_why,
     format_context_for_prompt,
     init_db as core_init_db,
+    read_memories as core_read_memories,
     migrate_from_json as core_migrate_from_json,
 )
 from core.skill_registry import (
@@ -54,6 +55,7 @@ from core.problem_solver import (
 )
 from core.identity_engine import IdentitySession, has_voice_profile, has_pin
 from core.agent import Agent
+from core.live_tools import LiveCall, approve_requested_call
 
 from actions.file_processor import file_processor
 from actions.flight_finder     import flight_finder
@@ -682,6 +684,15 @@ class JarvisLive:
         self._phone_active        = False   # True while phone mic is streaming; pauses PC mic
         self._identity             = IdentitySession()  # owner/guest speaker-mode tracker
         self._agent                = agent if agent is not None else Agent()  # Foundation modules composition root
+        self._tool_session         = self._agent.live_tool_session(      # tool calls run through the v8.x tool stack
+            execute=self._run_legacy_tool,
+            confirm=approve_requested_call,
+            recorder=self._agent.record_live_tool_outcomes,
+        )
+        try:   # read-only, non-sensitive production memory -> v8.x memory injection
+            self._agent.import_production_memory(core_read_memories)
+        except Exception as e:
+            print(f"[Memory] ⚠️ v8 memory import skipped: {e}")
         self._turn_audio_buf       = bytearray()          # raw mic bytes for the in-progress user turn
         self._turn_audio_lock      = threading.Lock()
         self._pending_vision       = None    # (img_bytes, mime_type, question, angle) to inject after tool response
@@ -813,7 +824,8 @@ class JarvisLive:
             output_audio_transcription={},
             input_audio_transcription={},
             system_instruction="\n".join(parts),
-            tools=[{"function_declarations": TOOL_DECLARATIONS + get_skill_tool_declarations()}],
+            tools=[{"function_declarations": self._tool_session.sync_declarations(
+                TOOL_DECLARATIONS + get_skill_tool_declarations())}],
             session_resumption=types.SessionResumptionConfig(),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
@@ -824,7 +836,12 @@ class JarvisLive:
             ),
         )
 
-    async def _execute_tool(self, fc) -> types.FunctionResponse:
+    async def _run_legacy_tool(self, name: str, args: dict) -> dict:
+        """Production executor handed to the tool session (it keeps the identity / PIN gate)."""
+        fr = await self._execute_tool_legacy(types.FunctionCall(name=name, args=args))
+        return dict(fr.response or {})
+
+    async def _execute_tool_legacy(self, fc) -> types.FunctionResponse:
         name = fc.name
         args = dict(fc.args or {})
 
@@ -1162,6 +1179,7 @@ class JarvisLive:
                                 self._last_user_speech = time.monotonic()
 
                         if sc.turn_complete:
+                            self._tool_session.end_run()
                             if self._turn_done_event:
                                 self._turn_done_event.set()
 
@@ -1237,11 +1255,11 @@ class JarvisLive:
                                 asyncio.create_task(_cam_close())
 
                     if response.tool_call:
-                        fn_responses = []
-                        for fc in response.tool_call.function_calls:
-                            print(f"[JARVIS] 📞 {fc.name}")
-                            fr = await self._execute_tool(fc)
-                            fn_responses.append(fr)
+                        calls = [LiveCall(fc.id, fc.name, dict(fc.args or {}))
+                                 for fc in response.tool_call.function_calls]
+                        replies = await self._tool_session.handle_round(calls)
+                        fn_responses = [types.FunctionResponse(id=r.call_id, name=r.name, response=r.response)
+                                        for r in replies]
                         await self.session.send_tool_response(
                             function_responses=fn_responses
                         )

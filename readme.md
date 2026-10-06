@@ -9,8 +9,8 @@ controlled tool system, and written back into memory and reflection with
 deterministic, fully tested behavior. Every capability is added as a
 small, additive, independently testable module.
 
-**Status:** checkpoint **v8.43 complete** · next planned milestone
-**v8.44 Production Runtime Wiring** · verified suite **2780 passed, 0 failed,
+**Status:** checkpoint **v8.44 complete** · next planned milestone
+**v8.45 Contract Closure** · verified suite **2792 passed, 0 failed,
 0 errors, 0 skipped**. `ROADMAP.md` is the authoritative, living record.
 
 ---

@@ -394,24 +394,24 @@ re-evaluate §9 against the repository and never against this table.
 | **A3** | COMPLETE | The only commit after a freeze point is the `aa95b63` edit to `main.py`, confirmed by the owner (§13). The other 15 frozen files each have one commit and are content-pinned (V4). |
 | **A4** | COMPLETE | Only `plan_projection` → `planner` and `skill_tool_adapter` → `skill_registry`. |
 | **A5** | COMPLETE | OD-7 is recorded (§8.1): the current `Agent` (55 methods, 1,606-line class) is accepted and only thin wiring may be added. v8.39 added only the 41-line `ask_with_tools` (pure delegation to `run_tool_loop`, pinned thin by `tests/test_agent_ask_with_tools.py`). |
-| **P1** | NOT STARTED | `main.py:684` builds `Agent()`; `self._agent` is never read. OD-2 is locked (scoped unfreeze); planned as v8.44. |
-| **P2** | PARTIAL | `core/live_tools.py` converts and registers all 28 production declarations (the 26 in `main.py` plus the weather and Spotify skills) in the Agent's registry and catalog (`tests/test_live_tools.py`, 48 tests). Not yet called from `main.py` (v8.44). |
-| **P3** | PARTIAL | `LiveToolSession.handle_round` runs a Gemini Live `tool_call` batch through the router under the C8 policy, sharing `ToolRun` with the v8.39 loop (OD-C limits per run, O1 hook, O2 strings, O9 records). Not yet called from `main.py` (v8.44). |
-| **P4** | PARTIAL | `core/production_memory.py` copies the production SQLite memory into the Agent's in-process `MemoryEngine` through the read-only `memory.core_memory.read_memories` (OD-4, OD-5): O3 at the door (only explicit non-sensitive rows), idempotent, nothing written back, nothing persisted; `tests/test_production_memory.py` (41, real SQLite in a temp directory). Not yet called from `main.py` (v8.44). |
-| **P5** | PARTIAL | `core/live_run_record.py` + thin `Agent.record_live_tool_outcomes` (the `recorder` of `live_tool_session`) record each production tool call: `PipelineRun` CREATED→RUNNING→COMPLETED/FAILED, step/Goal/Plan reflection, success and failure writeback from the O9 record only (no arguments, outputs or exception text), in-process memory, production SQLite never written; `tests/test_live_run_record.py` (14). Not yet called from `main.py` (v8.44). |
-| **V1** | PARTIAL | 2780 passed, but the suite needs `pytest` and `numpy`, and `pytest` is not declared in any dependency file. |
+| **P1** | COMPLETE | `main.py` builds the Agent and uses it for every Live tool call (`live_tool_session`), run recording and the memory import; `tests/test_production_wiring.py` pins this by AST. Real-desktop behaviour is V6 (not attested). |
+| **P2** | COMPLETE | `core/live_tools.py` registers all 28 production declarations in the Agent registry and catalog (`tests/test_live_tools.py`, 48); `main.py` syncs them through `sync_declarations` in the Live config (v8.44). |
+| **P3** | COMPLETE | `LiveToolSession.handle_round` runs each Live `tool_call` batch through the router under the C8 policy (OD-C limits per run, O1 hook, O2 strings, O9 records); `main.py` routes batches through it and ends the run at `turn_complete` (v8.44). |
+| **P4** | COMPLETE | `core/production_memory.py` bridges the production SQLite memory (read-only, O3 non-sensitive rows only, idempotent, nothing written back) into the Agent; `main.py` imports it at start-up (v8.44); `tests/test_production_memory.py` (41). |
+| **P5** | COMPLETE | `core/live_run_record.py` records each production tool call (run status, step/Goal/Plan reflection, success and failure writeback, O9 record only, in-process memory) and is the session recorder in `main.py` (v8.44); `tests/test_live_run_record.py` (14). |
+| **V1** | PARTIAL | 2792 passed, but the suite needs `pytest` and `numpy`, and `pytest` is not declared in any dependency file. |
 | **V2** | COMPLETE | Each milestone has a checkpoint commit and the current head passes the suite. Historical gates were not re-run. |
 | **V3** | COMPLETE | `tests/test_architecture_freeze.py` (9 tests) and per-module AST pins pass. |
 | **V4** | PARTIAL | `tests/test_frozen_content.py` (20 tests) pins the content (SHA-256, line endings normalized) of 15 of the 16 frozen files at their single freeze-point commit, checks the pinned set against the `ROADMAP.md` Frozen Modules list, and rejects new files in `skills/`. `main.py` is deliberately unpinned until the owner confirms or reverts the §13 exception. |
-| **V5** | NOT STARTED | `tests/test_main_agent_integration.py` has syntax and import-shape checks only. |
+| **V5** | COMPLETE | `tests/test_production_wiring.py` (12, headless, fakes only): AST pins that `main.py` uses the Agent plus the same wiring exercised end to end with the real declarations and a real SQLite file (P1–P5). |
 | **V6** | NOT STARTED | No attestation recorded. Environment-only. |
 | **V7** | PARTIAL | `requirements.txt` omits `anthropic`, `openai`, `ollama`, `pytest`, and the speech modules' imports (`torch`, `kokoro`, `vosk`, `faster_whisper`, `edge_tts`, `miniaudio`). |
 | **V8** | COMPLETE | `CLAUDE.md`, `ROADMAP.md`, `readme.md` and `docs/TECHNICAL_DEBT.md` reconciled by the documentation step that recorded this contract. |
 | **V9** | PARTIAL | The CryptoJS MIT text is missing (`THIRD_PARTY_NOTICES.md` §2 records it as open). |
 | Streaming, persistence, full permissions, other §7.1 areas | DEFERRED | §7. |
 
-Tally of the 29 requirements: **18 COMPLETE, 8 PARTIAL, 0 BLOCKED,
-3 NOT STARTED.** The tally is a count, not a percentage, and the items
+Tally of the 29 requirements: **24 COMPLETE, 4 PARTIAL, 0 BLOCKED,
+1 NOT STARTED.** The tally is a count, not a percentage, and the items
 are not weighted.
 
 ---
@@ -428,8 +428,7 @@ are not weighted.
 5. V7 — declare dependencies and make the test environment reproducible
    (authorized 2026-10-06; planned in v8.45).
 6. ~~C8 and C9 (v8.39), at library level.~~ Complete.
-7. The P-series and V5, as planned in `ROADMAP.md`: v8.41 (P2, P3), v8.42
-   (P4), v8.43 (P5, done at library level), v8.44 (P1, V5). V4 is partial: only the `main.py` pin
+7. ~~The P-series and V5 (v8.41–v8.44).~~ Complete. V4 is partial: only the `main.py` pin
    remains (v8.45, after the authorized wiring).
 8. ~~C10 (v8.40+), in the OD-4b scope.~~ Complete (v8.40).
 9. V9, then V6 (the owner attestation).
@@ -460,6 +459,8 @@ Each step is formally defined and recorded in `ROADMAP.md` (protocol §25).
 | Module | Commit | Change | Authorization |
 |---|---|---|---|
 | `main.py` (frozen) | `aa95b63` | One string literal in a Gemini tool-declaration example (`"Fatih"` → `"Alex"`). Behaviour-neutral. Recorded in `THIRD_PARTY_NOTICES.md`. | **Confirmed by the owner, 2026-10-06.** |
+
+| `main.py` (frozen) | v8.44 | Scoped unfreeze (OD-2): Agent tool session, run recorder and memory import wired in `__init__`; `_execute_tool` renamed `_execute_tool_legacy` behind `_run_legacy_tool`; declarations synced in `_build_config`; Live `tool_call` batches routed through `handle_round`, `end_run()` at `turn_complete`. No tool branch or identity / PIN logic changed. | Owner authorization of 2026-10-06 (OD-2, §8.1). |
 
 The change is accepted. Later authorized changes to `main.py` (the scoped
 unfreeze of OD-2) are recorded in this table when they are made.
