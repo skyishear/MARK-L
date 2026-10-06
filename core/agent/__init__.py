@@ -57,6 +57,7 @@ from core.tool_dispatch import ToolDispatchDecision, build_tool_dispatch_decisio
 from core.tool_interface import ToolRequest, ToolResult, TransientToolError
 from core.tool_registry import ToolRegistry
 from core.tool_catalog import ToolCatalog
+from core.live_run_record import LifecycleHooks, LiveRunRecord, record_tool_outcomes
 from core.live_tools import LiveToolSession
 from core.production_memory import ProductionMemoryImport, import_production_memory
 from core.tool_router import ToolNotFoundError, ToolRouter
@@ -1759,3 +1760,27 @@ class Agent:
         (v8.42; thin wiring over ``core.production_memory``): read-only, one-way,
         nothing persisted, sensitive rows never copied (O3)."""
         return import_production_memory(self._memory_engine, read())
+
+    def record_live_tool_outcomes(self, outcomes: Any, *, project: str | None = None) -> LiveRunRecord:
+        """Record production tool outcomes through the v8.x lifecycle (v8.43;
+        thin wiring over ``core.live_run_record``): one ``PipelineRun`` per
+        outcome with its step / Goal / Plan reflection and the Memory ->
+        Reflection -> Learning writeback (failure writeback for a failed call),
+        from the O9 outcome record only. Meant as the ``recorder`` of
+        :meth:`live_tool_session`; never writes the production store."""
+        return record_tool_outcomes(
+            outcomes,
+            hooks=LifecycleHooks(
+                lambda g, p: reflect_execution_started(g, p, goal_manager=self._goal_manager, planning_engine=self._planning_engine),
+                lambda g, p: reflect_execution_completed(g, p, goal_manager=self._goal_manager, planning_engine=self._planning_engine),
+                lambda p, t: reflect_step_reached(p, t, planning_engine=self._planning_engine),
+                lambda p, t: reflect_step_completed(p, t, planning_engine=self._planning_engine),
+                lambda p, t: reflect_step_skipped(p, t, planning_engine=self._planning_engine),
+            ),
+            project_request=self.project_request,
+            pipeline_run_manager=self._pipeline_run_manager,
+            reflection=self.reflection,
+            learning=self.learning,
+            memory_engine=self._memory_engine,
+            project=project,
+        )

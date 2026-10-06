@@ -398,8 +398,8 @@ re-evaluate §9 against the repository and never against this table.
 | **P2** | PARTIAL | `core/live_tools.py` converts and registers all 28 production declarations (the 26 in `main.py` plus the weather and Spotify skills) in the Agent's registry and catalog (`tests/test_live_tools.py`, 48 tests). Not yet called from `main.py` (v8.44). |
 | **P3** | PARTIAL | `LiveToolSession.handle_round` runs a Gemini Live `tool_call` batch through the router under the C8 policy, sharing `ToolRun` with the v8.39 loop (OD-C limits per run, O1 hook, O2 strings, O9 records). Not yet called from `main.py` (v8.44). |
 | **P4** | PARTIAL | `core/production_memory.py` copies the production SQLite memory into the Agent's in-process `MemoryEngine` through the read-only `memory.core_memory.read_memories` (OD-4, OD-5): O3 at the door (only explicit non-sensitive rows), idempotent, nothing written back, nothing persisted; `tests/test_production_memory.py` (41, real SQLite in a temp directory). Not yet called from `main.py` (v8.44). |
-| **P5** | NOT STARTED | No production code path calls any lifecycle or writeback method. Planned as v8.43. |
-| **V1** | PARTIAL | 2766 passed, but the suite needs `pytest` and `numpy`, and `pytest` is not declared in any dependency file. |
+| **P5** | PARTIAL | `core/live_run_record.py` + thin `Agent.record_live_tool_outcomes` (the `recorder` of `live_tool_session`) record each production tool call: `PipelineRun` CREATED→RUNNING→COMPLETED/FAILED, step/Goal/Plan reflection, success and failure writeback from the O9 record only (no arguments, outputs or exception text), in-process memory, production SQLite never written; `tests/test_live_run_record.py` (14). Not yet called from `main.py` (v8.44). |
+| **V1** | PARTIAL | 2780 passed, but the suite needs `pytest` and `numpy`, and `pytest` is not declared in any dependency file. |
 | **V2** | COMPLETE | Each milestone has a checkpoint commit and the current head passes the suite. Historical gates were not re-run. |
 | **V3** | COMPLETE | `tests/test_architecture_freeze.py` (9 tests) and per-module AST pins pass. |
 | **V4** | PARTIAL | `tests/test_frozen_content.py` (20 tests) pins the content (SHA-256, line endings normalized) of 15 of the 16 frozen files at their single freeze-point commit, checks the pinned set against the `ROADMAP.md` Frozen Modules list, and rejects new files in `skills/`. `main.py` is deliberately unpinned until the owner confirms or reverts the §13 exception. |
@@ -410,8 +410,8 @@ re-evaluate §9 against the repository and never against this table.
 | **V9** | PARTIAL | The CryptoJS MIT text is missing (`THIRD_PARTY_NOTICES.md` §2 records it as open). |
 | Streaming, persistence, full permissions, other §7.1 areas | DEFERRED | §7. |
 
-Tally of the 29 requirements: **18 COMPLETE, 7 PARTIAL, 0 BLOCKED,
-4 NOT STARTED.** The tally is a count, not a percentage, and the items
+Tally of the 29 requirements: **18 COMPLETE, 8 PARTIAL, 0 BLOCKED,
+3 NOT STARTED.** The tally is a count, not a percentage, and the items
 are not weighted.
 
 ---
@@ -429,7 +429,7 @@ are not weighted.
    (authorized 2026-10-06; planned in v8.45).
 6. ~~C8 and C9 (v8.39), at library level.~~ Complete.
 7. The P-series and V5, as planned in `ROADMAP.md`: v8.41 (P2, P3), v8.42
-   (P4), v8.43 (P5), v8.44 (P1, V5). V4 is partial: only the `main.py` pin
+   (P4), v8.43 (P5, done at library level), v8.44 (P1, V5). V4 is partial: only the `main.py` pin
    remains (v8.45, after the authorized wiring).
 8. ~~C10 (v8.40+), in the OD-4b scope.~~ Complete (v8.40).
 9. V9, then V6 (the owner attestation).

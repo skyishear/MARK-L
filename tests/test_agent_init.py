@@ -520,6 +520,7 @@ class TestNoForbiddenIntegration:
             "core.tool_runtime",  # v8.39
             "core.live_tools",  # v8.41
             "core.production_memory",  # v8.42
+            "core.live_run_record",  # v8.43
             "datetime",
             "types",
             "typing",

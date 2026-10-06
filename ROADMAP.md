@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.42 complete** · Active milestone: **none** · Next planned: **v8.43 Production Run Recording — NOT STARTED** (production-runtime integration plan v8.41–v8.45, owner-authorized 2026-10-06)
-> Verified suite at checkpoint: **2766 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.43 complete** · Active milestone: **none** · Next planned: **v8.44 Production Runtime Wiring — NOT STARTED** (production-runtime integration plan v8.41–v8.45, owner-authorized 2026-10-06)
+> Verified suite at checkpoint: **2780 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -51,7 +51,8 @@ in `docs/TECHNICAL_DEBT.md`.
 | v8.40 tool calling on the remaining providers (OpenAI, Gemini, Ollama) | ✅ Complete |
 | v8.41 production tool bridge (P2, P3: Gemini Live adapter, tool registration; `core/live_tools.py`) | ✅ Complete |
 | v8.42 production memory bridge (P4; `core/production_memory.py`) | ✅ Complete |
-| v8.43 production run recording (P5) | 🔲 Planned — NOT STARTED |
+| v8.43 production run recording (P5; `core/live_run_record.py`) | ✅ Complete |
+| v8.44 production runtime wiring (P1, V5) | 🔲 Planned — NOT STARTED |
 | v8.44 production runtime wiring (P1, V5; scoped unfreeze of `main.py`) | 🔲 Planned — NOT STARTED |
 | v8.45 contract closure (V7 dependencies, V9 notices, V4 `main.py` pin, A3 / A5 records) | 🔲 Planned — NOT STARTED |
 | Streaming, persistence, full permission system, voice/UI features beyond P1–P5, and the other `docs/TECHNICAL_DEBT.md` ideas | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`; promoted only by a contract amendment) |
@@ -715,6 +716,27 @@ it.
   `AIService`, so this memory serves the v8.x request paths (`ask`,
   `ask_with_tools`); wiring it at startup is v8.44.
 
+- v8.43 Production Run Recording (contract P5; owner decision OD-5) — new
+  `core/live_run_record.py` and one thin `Agent.record_live_tool_outcomes(outcomes,
+  project=None)`, meant as the `recorder` of `live_tool_session`. For every O9
+  `ToolCallOutcome` the call is projected as a one-task plan
+  (`project_request(tool_name)`), Goal and Plan go ACTIVE and a `PipelineRun` is
+  created and set RUNNING. **Executed:** step ACTIVE → COMPLETED, run COMPLETED,
+  Plan and Goal COMPLETED, then Memory → Reflection → Learning success writeback.
+  **Failed:** step stays ACTIVE, run FAILED, Goal and Plan stay ACTIVE, one failure
+  writeback (exception *type name* only, confidence 0). **Refused:** nothing ran —
+  step ARCHIVED (skipped, no success implied), run COMPLETED, Plan and Goal
+  COMPLETED, nothing written back. Only the outcome record is used: never
+  arguments, outputs or exception text. Memory is the in-process `MemoryEngine`
+  (category `tool_outcome`, `sensitive=False`); the production SQLite store is
+  never written (test pins that `sqlite3.connect` is never called). Each outcome is
+  recorded in isolation (an unrecordable one is counted, others continue) and the
+  live session already suppresses recorder exceptions. The existing lifecycle
+  reflection functions are injected as `LifecycleHooks` by the Agent, so the leaf
+  imports only `core.pipeline_run`. Sanctioned pin updates (minimum): Agent import
+  allowlists (+`core.live_run_record`). Verified: 14 new focused, full suite 2780.
+  Not yet called from `main.py` (v8.44).
+
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
 
@@ -722,16 +744,16 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.42 — Production Memory Bridge: COMPLETE.**
+**v8.43 — Production Run Recording: COMPLETE.**
 
-- Full suite: 2766 passed, 0 failed, 0 errors, 0 skipped.
-- Production changes: new `core/production_memory.py`, the additive read-only
-  `memory.core_memory.read_memories`, and the thin
-  `Agent.import_production_memory`; frozen legacy modules and `main.py` zero
+- Full suite: 2780 passed, 0 failed, 0 errors, 0 skipped.
+- Production changes: new `core/live_run_record.py` and the thin
+  `Agent.record_live_tool_outcomes`; frozen legacy modules and `main.py` zero
   diff.
-- The production memory can reach the v8.x memory injection (non-sensitive rows
-  only). `main.py` is not wired yet (v8.44), so the production runtime still
-  does not use the v8.x stack.
+- Production tool calls routed through `live_tool_session(recorder=...)` produce a
+  `PipelineRun`, step/Goal/Plan reflection and success or failure writeback.
+  `main.py` is not wired yet (v8.44), so the production runtime still does not use
+  the v8.x stack.
 
 ---
 
@@ -1156,7 +1178,7 @@ import checks, `git diff` scope check._
   injectable only if explicitly marked non-sensitive) and OD-5 (nothing is
   persisted). *Prerequisites:* `MemoryEngine`, `memory_context`. *Exclusions:*
   any write to the production store; persistence.
-- **v8.43 Production Run Recording (P5).** *Objective:* record each production
+- **v8.43 Production Run Recording (P5) — COMPLETE (see history above).** *Objective:* record each production
   tool call through the v8.x lifecycle — `Agent.project_request(tool_name)`, a
   `PipelineRun` (CREATED → RUNNING → COMPLETED / FAILED), step and Goal / Plan
   reflection, and Reflection / Learning / in-process Memory writeback including
