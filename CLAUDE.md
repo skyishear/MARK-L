@@ -35,11 +35,11 @@ Never rely on previous conversations. Verify the current state before acting.
 - Legacy v3.x execution stack: **frozen** (read-only; see `ROADMAP.md`).
 - Active surface: v8.x Foundation stores, v8.11–v8.20 tool stack, v8.21–v8.33 projection path,
   v8.34–v8.36 context and memory shaping, v8.37–v8.38 tool-calling types and first provider,
-  v8.39 tool runtime loop.
-- Checkpoint: **v8.39 complete**; active milestone: none; next planned milestone:
-  **v8.40+** (tool calling on the remaining providers, owner-gated) of the owner-authorized
-  plan recorded in `ROADMAP.md` (the living checkpoint).
-- Verified suite: **2607 passed, 0 failed, 0 errors, 0 skipped**.
+  v8.39 tool runtime loop, v8.40 tool calling on all built-in providers.
+- Checkpoint: **v8.40 complete**; active milestone: none; next planned milestone:
+  **v8.41** of the owner-authorized production-integration plan (v8.41–v8.45)
+  recorded in `ROADMAP.md` (the living checkpoint).
+- Verified suite: **2677 passed, 0 failed, 0 errors, 0 skipped**.
 - Completion: EDITH is complete only per `docs/EDITH_COMPLETION_CONTRACT.md`
   (Definition P, production-complete). Completing v8.39 alone is not project completion.
 

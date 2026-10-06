@@ -1,8 +1,8 @@
 # MARK-L Roadmap
 
 > Project identity: EDITH · Repository: MARK-L
-> Current checkpoint: **v8.39 complete** · Active milestone: **none** · Next planned: **v8.40+ tool calling on the remaining providers — NOT STARTED, owner-gated (OD-4b)**; production-runtime integration (P1–P5) is owner-gated (OD-2, OD-3, OD-4, OD-5)
-> Verified suite at checkpoint: **2607 passed, 0 failed, 0 errors, 0 skipped**
+> Current checkpoint: **v8.40 complete** · Active milestone: **none** · Next planned: **v8.41 Production Tool Bridge — NOT STARTED** (production-runtime integration plan v8.41–v8.46, owner-authorized 2026-10-06)
+> Verified suite at checkpoint: **2677 passed, 0 failed, 0 errors, 0 skipped**
 
 This document is the single source for milestone status and a **living
 checkpoint**: it records completed milestones, the current checkpoint and
@@ -48,8 +48,12 @@ in `docs/TECHNICAL_DEBT.md`.
 | v8.37 neutral tool-calling types | ✅ Complete |
 | v8.38 first provider tool-call normalization (Anthropic) | ✅ Complete |
 | v8.39 tool runtime loop (model↔tool execution loop, `core/tool_runtime.py`) | ✅ Complete |
-| v8.40+ tool calling on the remaining providers (OpenAI, Gemini, Ollama) | 🔲 Planned — NOT STARTED, owner-gated (OD-4b; see the Completion Contract) |
-| Production-runtime integration of the v8.x stack (contract requirements P1–P5) | 🔲 Required for completion (Definition P) — NOT STARTED, owner-gated (see the Completion Contract) |
+| v8.40 tool calling on the remaining providers (OpenAI, Gemini, Ollama) | ✅ Complete |
+| v8.41 production tool bridge (P2, P3: Gemini Live adapter, tool registration) | 🔲 Planned — NOT STARTED |
+| v8.42 production memory bridge (P4) | 🔲 Planned — NOT STARTED |
+| v8.43 production run recording (P5) | 🔲 Planned — NOT STARTED |
+| v8.44 production runtime wiring (P1, V5; scoped unfreeze of `main.py`) | 🔲 Planned — NOT STARTED |
+| v8.45 contract closure (V7 dependencies, V9 notices, V4 `main.py` pin, A3 / A5 records) | 🔲 Planned — NOT STARTED |
 | Streaming, persistence, full permission system, voice/UI features beyond P1–P5, and the other `docs/TECHNICAL_DEBT.md` ideas | ⏳ Deferred (see `docs/TECHNICAL_DEBT.md`; promoted only by a contract amendment) |
 
 ---
@@ -621,6 +625,38 @@ it.
   (+`core.tool_runtime`). Frozen legacy modules, `main.py`, the router,
   registry, catalog, other providers and `Agent.__all__` zero diff. Verified:
   138 new focused, full suite 2587.
+- v8.40 Tool Calling on the Remaining Providers (owner decision OD-4b) — each
+  provider module is the only place that knows its native format, in the
+  v8.38 / v8.39 shape. **OpenAI:** `tools=[{"type": "function", "function":
+  {name, description, parameters}}]`; `function` tool calls of the first choice
+  → `ToolCall` (id verbatim, arguments parsed from the JSON string, never
+  repaired); exchanges replayed as an assistant `tool_calls` message plus one
+  `tool` message per result; `finish_reason` `length` / `content_filter` with
+  calls, or a malformed / non-function / duplicate call, raises
+  `ToolCallNormalizationError`. **Gemini:** `config["tools"] =
+  [{"function_declarations": [{name, description, parameters_json_schema}]}]`
+  with native `user` / `model` + `parts` contents (only on the tool path; the
+  v7.2 history shape is untouched); `function_call` parts → `ToolCall` with the
+  **positional-id fallback** (`call_1`, `call_2`, … when the SDK gives no id);
+  replay as `function_call` / `function_response` parts; any `finish_reason`
+  other than `STOP` with calls is fail-closed. **Ollama:** tools go through
+  `chat` (`generate` has no tool support; requests without tools still use
+  `generate`); positional ids; replay as assistant `tool_calls` + `tool`
+  messages (`tool_name`); `done_reason` `length` with calls is fail-closed. All
+  four built-in providers now declare `supports_tool_calling = True`; the
+  `AIService` guard still rejects custom providers without it. Request shapes
+  and response objects were checked against the real `openai`, `google-genai`
+  and `ollama` SDK models in the build environment (not part of the suite).
+  Sanctioned pin updates (minimum): the three provider isolation tests
+  (+`json`, +`core.tool_calling`); `ToolCall` importers (+ the three
+  providers); the "built-in unsupported providers are rejected" and "other
+  providers have no capability" tests, obsolete by OD-4b, replaced by their
+  v8.40 counterparts (all four built-ins declare the capability; custom
+  providers without it are still rejected). Verified: 69 new focused, full
+  suite 2677. Found while verifying (pre-existing, not changed here, relevant
+  to V6): the Gemini history shape `{"role", "content"}` and Ollama's
+  `generate(messages=...)` are not valid against the real SDKs on the
+  non-tool path.
 
 Legacy and tool runtimes are intentionally **parallel**: the legacy
 skill chain is unchanged; the tool chain is opt-in.
@@ -629,18 +665,15 @@ skill chain is unchanged; the tool chain is opt-in.
 
 ## Current Checkpoint
 
-**v8.39 — Tool Runtime Loop: COMPLETE.**
+**v8.40 — Tool Calling on the Remaining Providers: COMPLETE.**
 
-- Full suite: 2607 passed, 0 failed, 0 errors, 0 skipped (2587 at v8.39 plus the
-  20 V4 content pins in `tests/test_frozen_content.py`).
-- Production changes in `core/tool_calling.py`, `core/ai_provider.py`,
-  `core/claude_provider.py`, `core/ai_service.py`, `core/context_manager.py`,
-  `core/agent/__init__.py` and the new `core/tool_runtime.py` /
-  `core/tool_context.py`; frozen legacy modules and `main.py` zero diff.
-- `Agent.ask_with_tools` can run a bounded model↔tool loop (5 model rounds /
-  10 tool executions) on a tool-calling provider (Claude). The v8.x stack is
-  still not connected to the production runtime (`main.py`), and OpenAI,
-  Gemini and Ollama still reject tools fail-closed.
+- Full suite: 2677 passed, 0 failed, 0 errors, 0 skipped.
+- Production changes only in `core/openai_provider.py`,
+  `core/gemini_provider.py` and `core/ollama_provider.py`; frozen legacy
+  modules and `main.py` zero diff.
+- All four built-in providers support tool calling (v8.39 loop included). The
+  v8.x stack is still not connected to the production runtime (`main.py`
+  builds an `Agent` and does not use it); that is the v8.41–v8.45 plan.
 
 ---
 
@@ -1032,6 +1065,56 @@ milestone): side-effecting tool confirmation, tool-error disclosure to
 providers, `sensitive` memory handling, resume of non-idempotent stages,
 policy values, ARCHIVED-stage resume, prior-attempt success records,
 first provider, tool-call auditing, token-count method, v8/v9 numbering._
+
+### v8.41–v8.45 — Production-runtime integration plan — **NOT STARTED** (owner-authorized 2026-10-06)
+
+_Recorded under `AUTONOMOUS_BUILD_PROTOCOL.md` §25 from the Completion Contract
+(requirements P1–P5, V4, V5, V7, V9) after the owner locked OD-2, OD-3, OD-4,
+OD-4b, OD-5, OD-7, §13 and the V7 authorization. Each milestone is audited
+against the repository before implementation. Common exclusions: persistence,
+streaming, a permission framework, any change to the legacy runtime beyond the
+scoped `main.py` wiring (OD-2), OD-8 (licensing intent) and V6 (owner
+attestation). Common verification: focused tests, full suite, architecture and
+import checks, `git diff` scope check._
+
+- **v8.41 Production Tool Bridge (P2, P3).** *Objective:* a provider-neutral
+  adapter, new `core/live_tools.py`, that (a) converts the production Gemini-
+  format declarations into `ToolSpec`s and registers a callback tool per
+  production tool in the Agent's `ToolRegistry` / `ToolCatalog`, and (b) executes
+  the tool calls of a Gemini Live session through the `ToolRouter` under the
+  exact C8 per-call policy (offered / registered gates, O1 hook, O2 strings, O9
+  outcome records, OD-C limits per run), sharing one implementation with the
+  v8.39 loop (a behaviour-preserving extraction in `core/tool_runtime.py`).
+  *Justification:* contract P2 / P3 (amended); the 26 production tools and the
+  two skills are not reachable through the v8.x tool stack. *Prerequisites
+  (present):* `ToolSpec` / `ToolCatalog` (the declarations use only
+  `type`, `properties`, `description`, `required`, `items`), `ToolRouter`,
+  `tool_runtime`, thin `Agent` wiring (OD-7). *Exclusions:* `main.py`; the
+  production confirmation hook keeps the existing identity / PIN gate inside the
+  legacy executor.
+- **v8.42 Production Memory Bridge (P4).** *Objective:* a read-only, one-way
+  bridge, new `core/production_memory.py`, copying the production SQLite memory
+  into the Agent's in-process `MemoryEngine`, honouring O3 (an entry is
+  injectable only if explicitly marked non-sensitive) and OD-5 (nothing is
+  persisted). *Prerequisites:* `MemoryEngine`, `memory_context`. *Exclusions:*
+  any write to the production store; persistence.
+- **v8.43 Production Run Recording (P5).** *Objective:* record each production
+  tool call through the v8.x lifecycle — `Agent.project_request(tool_name)`, a
+  `PipelineRun` (CREATED → RUNNING → COMPLETED / FAILED), step and Goal / Plan
+  reflection, and Reflection / Learning / in-process Memory writeback including
+  failure writeback — from the O9 outcome record only (no arguments, outputs or
+  exception text). *Prerequisites:* v8.21–v8.29 machinery, v8.39 records.
+  *Exclusions:* writes to the production SQLite store (OD-5).
+- **v8.44 Production Runtime Wiring (P1, V5).** *Objective:* the scoped unfreeze
+  of `main.py` (OD-2): the production entry point obtains the Agent's live tool
+  session, routes the Live `tool_call` batches and `turn_complete` through it,
+  and imports the memory bridge, with all logic in the new `core/` modules;
+  headless tests (V5) cover P1–P5 with fakes and pin that `main.py` uses the
+  Agent. *Prerequisites:* v8.41–v8.43.
+- **v8.45 Contract Closure.** *Objective:* V7 (declare `anthropic`, `openai`,
+  `ollama` and the test dependency), V9 (restore the CryptoJS MIT licence text),
+  V4 (pin the authorized `main.py` content), A3 / A5 records, and the contract
+  snapshot. *Exclusions:* OD-8 stays open; V6 stays the owner's attestation.
 
 ### v8.39 — Tool Runtime Loop — **COMPLETE** (moved to history above; kept here as the discovery record)
 

@@ -17,7 +17,8 @@
 > budgeting, v8.35) and §6 (history trimming, v8.34) and parts of §2, §4 and §9:
 > the context policy, the system channel and opt-in memory injection (v8.36), and
 > neutral tool-calling types with first-provider normalization (v8.37–v8.38),
-> and the bounded model↔tool runtime loop (v8.39).
+> the bounded model↔tool runtime loop (v8.39) and tool calling on every
+> built-in provider (v8.40).
 > Bounded retry exists for tool execution (v8.33); the `AIService`-level retry of
 > §14 does not. `ROADMAP.md` is the authoritative record of what is complete.
 > The "Project assessment" section at the end is a historical v7.6 snapshot: its

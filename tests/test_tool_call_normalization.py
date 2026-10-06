@@ -353,16 +353,19 @@ class TestAIService:
         sent = cap.requests[0]
         assert sent.tools == tools and sent.system.startswith("SYS")
 
-    @pytest.mark.parametrize("provider_name", ["openai", "gemini", "ollama"])
-    def test_builtin_unsupported_providers_rejected_before_invocation(
+    @pytest.mark.parametrize("provider_name", ["openai", "gemini", "ollama", "claude"])
+    def test_every_builtin_provider_accepts_tools_through_the_service(
             self, provider_name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        # v8.40 (OD-4b): all four built-in providers declare tool calling, so the
+        # fail-closed guard no longer rejects them (custom providers without the
+        # capability are still rejected: see the tests below).
         s = AIService()
         provider = s.router.select(provider_name)
+        assert provider.supports_tool_calling is True
         called: list[str] = []
-        monkeypatch.setattr(provider, "complete", lambda request: called.append("x"))
-        with pytest.raises(ToolCallingUnsupportedError, match=provider_name):
-            s.complete(provider_name, AIRequest(prompt="p", tools=[spec()]))
-        assert called == []
+        monkeypatch.setattr(provider, "complete", lambda request: called.append("x") or AIResponse("ok", provider_name))
+        s.complete(provider_name, AIRequest(prompt="p", tools=[spec()]))
+        assert called == ["x"]
 
     @pytest.mark.parametrize("fake", [PlainCapture, NoFlagCapture])
     def test_custom_provider_without_capability_rejected(self, fake: type) -> None:
@@ -425,12 +428,13 @@ class TestArchitecture:
                     with open(os.path.join(dirpath, name), encoding="utf-8") as f:
                         assert "input_schema" not in f.read(), name
 
-    def test_other_providers_untouched_and_no_capability(self) -> None:
+    def test_all_builtin_providers_declare_the_neutral_capability(self) -> None:
+        # v8.40 (OD-4b): previously only Claude declared it.
         from core.gemini_provider import GeminiProvider
         from core.ollama_provider import OllamaProvider
         from core.openai_provider import OpenAIProvider
-        for cls in (OpenAIProvider, GeminiProvider, OllamaProvider):
-            assert not hasattr(cls, "supports_tool_calling"), cls.__name__
+        for cls in (ClaudeProvider, OpenAIProvider, GeminiProvider, OllamaProvider):
+            assert cls.supports_tool_calling is True, cls.__name__
 
     def test_no_new_dependency_or_network(self) -> None:
         mods = _imports(os.path.join(CORE_DIR, "claude_provider.py"))

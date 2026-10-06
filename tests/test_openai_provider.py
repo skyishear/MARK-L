@@ -184,7 +184,7 @@ class TestArchitecturalIsolation:
         with open(mod.__file__, encoding="utf-8") as f:
             tree = ast.parse(f.read())
 
-        allowed_root_modules = {"core", "openai", "typing", "__future__"}
+        allowed_root_modules = {"core", "openai", "typing", "__future__", "json"}  # v8.40: tool-call arguments are JSON
         # When the import root is ``core``, the *first two* segments
         # identify the module (e.g. ``core.ai_provider``). The
         # check is split below.
@@ -204,7 +204,7 @@ class TestArchitecturalIsolation:
                     f"Forbidden import: {node.module}"
                 )
                 if root == "core":
-                    assert len(parts) >= 2 and parts[1] == "ai_provider", (
+                    assert len(parts) >= 2 and parts[1] in ("ai_provider", "tool_calling"), (
                         f"Forbidden import: {node.module}"
                     )
                 assert not any(
@@ -218,7 +218,7 @@ class TestArchitecturalIsolation:
                         f"Forbidden import: {n.name}"
                     )
                     if root == "core":
-                        assert len(parts) >= 2 and parts[1] == "ai_provider", (
+                        assert len(parts) >= 2 and parts[1] in ("ai_provider", "tool_calling"), (
                             f"Forbidden import: {n.name}"
                         )
 

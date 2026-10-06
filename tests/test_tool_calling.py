@@ -244,7 +244,8 @@ class TestBoundary:
         # normalizing provider are the sanctioned importers.
         # Checked on real imports (``supports_tool_calling`` is an unrelated
         # v8.38 capability attribute name, not an import).
-        allowed = {"tool_calling.py", "ai_provider.py", "claude_provider.py", "tool_runtime.py"}  # v8.39: + the loop leaf
+        allowed = {"tool_calling.py", "ai_provider.py", "claude_provider.py", "tool_runtime.py",
+                   "openai_provider.py", "gemini_provider.py", "ollama_provider.py"}  # v8.39: + loop leaf; v8.40: + providers
         for dirpath, _, files in os.walk(CORE_DIR):
             for name in files:
                 if name.endswith(".py") and name not in allowed:

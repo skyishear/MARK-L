@@ -186,7 +186,7 @@ class TestArchitecturalIsolation:
         with open(mod.__file__, encoding="utf-8") as f:
             tree = ast.parse(f.read())
 
-        allowed_root_modules = {"core", "ollama", "typing", "__future__"}
+        allowed_root_modules = {"core", "ollama", "typing", "__future__", "json"}  # v8.40: tool-call arguments are JSON
         forbidden_substrings = (
             "core.planner", "core.execution_", "core.problem_solver",
             "core.memory", "core.reflection", "core.learning",
@@ -205,7 +205,7 @@ class TestArchitecturalIsolation:
                     f"Forbidden import: {node.module}"
                 )
                 if root == "core":
-                    assert len(parts) >= 2 and parts[1] == "ai_provider", (
+                    assert len(parts) >= 2 and parts[1] in ("ai_provider", "tool_calling"), (
                         f"Forbidden import: {node.module}"
                     )
                 assert not any(
@@ -219,7 +219,7 @@ class TestArchitecturalIsolation:
                         f"Forbidden import: {n.name}"
                     )
                     if root == "core":
-                        assert len(parts) >= 2 and parts[1] == "ai_provider", (
+                        assert len(parts) >= 2 and parts[1] in ("ai_provider", "tool_calling"), (
                             f"Forbidden import: {n.name}"
                         )
 

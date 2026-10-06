@@ -388,18 +388,18 @@ re-evaluate §9 against the repository and never against this table.
 | **C7** | COMPLETE | `supports_tool_calling` is true only on Claude (`core/claude_provider.py:79`). The `AIService` guard is at `core/ai_service.py:108–111`. |
 | **C8** | COMPLETE | `core/tool_runtime.py` (`run_tool_loop`, limits `MAX_MODEL_ROUNDS = 5` / `MAX_TOOL_EXECUTIONS = 10`, `ToolLoopExhaustedError`), `core/tool_context.py`, `ToolExchange`, `AIRequest.tool_exchanges`, `Agent.ask_with_tools`; `ROADMAP.md` records v8.39 COMPLETE. Tests: `tests/test_tool_runtime.py` (65), `test_tool_exchange.py` (32), `test_tool_context.py` (22), `test_agent_ask_with_tools.py` (19), covering the OD-A to OD-C rules, fail-closed gates, loop termination and exception propagation as interpreted in §8.1. |
 | **C9** | COMPLETE | O1, O2 and O9 are locked and recorded in `ROADMAP.md` (v8.39 entry) and enforced by `tests/test_tool_runtime.py` (hook is exact-`True` and default-deny, sanitized strings only, outcome records with no arguments or exception text, loop writes nothing; end to end in `tests/test_agent_ask_with_tools.py`). The full permission system stays deferred. |
-| **C10** | BLOCKED | OpenAI, Gemini and Ollama are fail-closed (`supports_tool_calling` is true only on Claude). Needs OD-4b; C8 is complete. |
+| **C10** | COMPLETE | OpenAI, Gemini and Ollama map tool calls natively and declare `supports_tool_calling` (`core/openai_provider.py`, `core/gemini_provider.py`, `core/ollama_provider.py`; OD-4b locked); every other provider is still fail-closed. Tests: `tests/test_provider_tool_calling.py` (69). Request shapes were checked against the real SDK models in the build environment. |
 | **A1** | COMPLETE | AST cycle scan of `core/` and `core/agent/`: none. |
 | **A2** | COMPLETE | `anthropic`, `openai`, `ollama` and `google` are imported only inside the provider modules, nested. |
-| **A3** | PARTIAL | `main.py` (frozen) was edited in `aa95b63`; see §13. The other 15 frozen files each have one commit and are content-pinned (V4); `main.py` is not. |
+| **A3** | COMPLETE | The only commit after a freeze point is the `aa95b63` edit to `main.py`, confirmed by the owner (§13). The other 15 frozen files each have one commit and are content-pinned (V4). |
 | **A4** | COMPLETE | Only `plan_projection` → `planner` and `skill_tool_adapter` → `skill_registry`. |
-| **A5** | PARTIAL | `Agent` has 55 methods in a 1,606-line class, including `_record_failure_outcome` (98 lines) and `_run_projected_pipeline` (88); v8.39 added only the 41-line `ask_with_tools` (pure delegation to `run_tool_loop`, no loop logic). Needs OD-7. |
-| **P1** | BLOCKED | `main.py:684` builds `Agent()`; `self._agent` is never read. Needs OD-2. |
-| **P2** | NOT STARTED | 26 `TOOL_DECLARATIONS` plus a hand-written dispatch chain in `main.py`; two skills registered (`skills/spotify.py:84`, `skills/weather.py:43`). Needs OD-2 for any frozen file. |
-| **P3** | BLOCKED | Production uses a Gemini Live session (`main.py:1622–1628`); `GeminiProvider` has no tool-calling support. Needs OD-3; C8 is complete. |
-| **P4** | BLOCKED | Production memory is SQLite (`memory/core_memory.py:39`); `MemoryEngine` is in-process (`core/memory_engine.py:1`). Needs OD-4 and OD-5. |
-| **P5** | NOT STARTED | No production code path calls any lifecycle or writeback method. |
-| **V1** | PARTIAL | 2607 passed, but the suite needs `pytest` and `numpy`, and `pytest` is not declared in any dependency file. |
+| **A5** | COMPLETE | OD-7 is recorded (§8.1): the current `Agent` (55 methods, 1,606-line class) is accepted and only thin wiring may be added. v8.39 added only the 41-line `ask_with_tools` (pure delegation to `run_tool_loop`, pinned thin by `tests/test_agent_ask_with_tools.py`). |
+| **P1** | NOT STARTED | `main.py:684` builds `Agent()`; `self._agent` is never read. OD-2 is locked (scoped unfreeze); planned as v8.44. |
+| **P2** | NOT STARTED | 26 `TOOL_DECLARATIONS` plus a hand-written dispatch chain in `main.py`; two skills registered (`skills/spotify.py:84`, `skills/weather.py:43`). Planned as v8.41. |
+| **P3** | NOT STARTED | Production uses a Gemini Live session (`main.py:1622–1628`). OD-3 is locked and P3 amended (§5); the Live adapter is planned as v8.41. |
+| **P4** | NOT STARTED | Production memory is SQLite (`memory/core_memory.py:39`); `MemoryEngine` is in-process (`core/memory_engine.py:1`). OD-4 / OD-5 are locked; the bridge is planned as v8.42. |
+| **P5** | NOT STARTED | No production code path calls any lifecycle or writeback method. Planned as v8.43. |
+| **V1** | PARTIAL | 2677 passed, but the suite needs `pytest` and `numpy`, and `pytest` is not declared in any dependency file. |
 | **V2** | COMPLETE | Each milestone has a checkpoint commit and the current head passes the suite. Historical gates were not re-run. |
 | **V3** | COMPLETE | `tests/test_architecture_freeze.py` (9 tests) and per-module AST pins pass. |
 | **V4** | PARTIAL | `tests/test_frozen_content.py` (20 tests) pins the content (SHA-256, line endings normalized) of 15 of the 16 frozen files at their single freeze-point commit, checks the pinned set against the `ROADMAP.md` Frozen Modules list, and rejects new files in `skills/`. `main.py` is deliberately unpinned until the owner confirms or reverts the §13 exception. |
@@ -410,8 +410,8 @@ re-evaluate §9 against the repository and never against this table.
 | **V9** | PARTIAL | The CryptoJS MIT text is missing (`THIRD_PARTY_NOTICES.md` §2 records it as open). |
 | Streaming, persistence, full permissions, other §7.1 areas | DEFERRED | §7. |
 
-Tally of the 29 requirements: **15 COMPLETE, 6 PARTIAL, 4 BLOCKED,
-4 NOT STARTED.** The tally is a count, not a percentage, and the items
+Tally of the 29 requirements: **18 COMPLETE, 4 PARTIAL, 0 BLOCKED,
+7 NOT STARTED.** The tally is a count, not a percentage, and the items
 are not weighted.
 
 ---
@@ -422,24 +422,20 @@ are not weighted.
    statements (documentation only).~~ Recorded by this change.
 2. ~~Lock O1, O2, O9, OD-A, OD-B and OD-C~~ — all six locked 2026-10-06
    (§8.1). C8 and C9 are complete.
-3. Lock OD-2, OD-3, OD-4 and OD-5 (and OD-7 for A5). Unblocks the
-   P-series. This can run in parallel with step 2.
-4. A read-only production-integration contract audit, taking into account
-   that `main.py` is frozen and the production transport is a realtime
-   Gemini Live session.
-5. V7 — declare dependencies and make the test environment reproducible.
-   This needs the owner's authorization to touch configuration
-   (`CLAUDE.md` Operating Rules).
+3. ~~Lock OD-2, OD-3, OD-4, OD-5 and OD-7~~ — locked 2026-10-06 (§8.1).
+4. ~~A read-only production-integration contract audit~~ — done; the plan
+   is recorded in `ROADMAP.md` (v8.41–v8.45).
+5. V7 — declare dependencies and make the test environment reproducible
+   (authorized 2026-10-06; planned in v8.45).
 6. ~~C8 and C9 (v8.39), at library level.~~ Complete.
-7. The P-series: P1 and P5 as a thin vertical slice, then P2 and P4; P3
-   once OD-3 is locked. Build V5 alongside (V4 is partial: only the `main.py`
-   pin, which awaits the §13 confirmation, remains).
-8. C10 (v8.40+), in the OD-4b scope.
+7. The P-series and V5, as planned in `ROADMAP.md`: v8.41 (P2, P3), v8.42
+   (P4), v8.43 (P5), v8.44 (P1, V5). V4 is partial: only the `main.py` pin
+   remains (v8.45, after the authorized wiring).
+8. ~~C10 (v8.40+), in the OD-4b scope.~~ Complete (v8.40).
 9. V9, then V6 (the owner attestation).
 10. The completion attestation in `ROADMAP.md` (§12).
 
-Version numbers are not assigned to these steps (protocol §25.2); each is
-formally defined and recorded in `ROADMAP.md` when it is taken up.
+Each step is formally defined and recorded in `ROADMAP.md` (protocol §25).
 
 ---
 
